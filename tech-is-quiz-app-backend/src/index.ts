@@ -3,12 +3,11 @@ import cors from "cors"
 import express, { type Request, type Response } from "express"
 import { createServer } from "node:http"
 import { randomInt, randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import path from "node:path"
 import { Server, type Socket } from "socket.io"
 import { authenticateUser, createSessionToken, loadUsers, validateAuthConfiguration, verifySessionToken, type SessionUser, type UserRole } from "./auth.js"
 import { applyAnswer } from "./game.js"
-import { dataDirectory } from "./paths.js"
+import { query } from "./database.js"
+import { loadQuizzes, saveQuiz, type Quiz } from "./quiz-store.js"
 import { normalizeNickname, validateNickname, validateTeamName, validateTeamNameInput } from "./room-validation.js"
 
 type QuizQuestion = {
@@ -22,9 +21,9 @@ type QuizQuestion = {
   timeLimitSec: number
 }
 type QuizRound = { id: string; title: string; questions: QuizQuestion[] }
-type Quiz = { id: string; title: string; description: string; rounds: QuizRound[]; updatedAt: string }
 type Player = {
   id: string
+  participantId?: string
   nickname: string
   teamName: string
   score: number
@@ -36,8 +35,10 @@ type Player = {
 }
 type GamePhase = "LOBBY" | "QUESTION" | "REVEAL" | "LEADERBOARD" | "COMPLETED"
 type Room = {
+  id: string
   code: string
   hostKey: string
+  hostId: string
   quiz: Quiz
   playerLimit: number | null
   autoStartWhenFull: boolean
@@ -53,7 +54,6 @@ type Room = {
 }
   type ClientSocket = Socket & { data: { role?: "host" | "player"; appRole?: UserRole; userId?: string; roomCode?: string; playerId?: string } }
 
-const quizFile = path.join(dataDirectory, "quizzes.json")
 const app = express()
 const server = createServer(app)
 const frontendOrigin = process.env.FRONTEND_URL ?? "http://localhost:3000"
@@ -118,22 +118,6 @@ app.post("/auth/login", async (request, response) => {
   const token = await createSessionToken(user)
   response.json({ token, session: { userId: user.userId, name: user.name, role: user.role } satisfies SessionUser })
 })
-
-async function persistQuizzes() {
-  await mkdir(dataDirectory, { recursive: true })
-  const temporaryFile = `${quizFile}.${randomUUID()}.tmp`
-  await writeFile(temporaryFile, JSON.stringify(quizzes, null, 2), "utf8")
-  await rename(temporaryFile, quizFile)
-}
-
-async function loadQuizzes() {
-  try {
-    quizzes = JSON.parse(await readFile(quizFile, "utf8")) as Quiz[]
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-    quizzes = []
-  }
-}
 
 function currentQuestion(room: Room) {
   return room.quiz.rounds[room.roundIndex]?.questions[room.questionIndex]
@@ -207,6 +191,7 @@ function setPhase(room: Room, phase: GamePhase) {
       if (room.phase === "QUESTION") setPhase(room, "REVEAL")
     }, question.timeLimitSec * 1000)
   }
+  void updatePersistedRoom(room).catch((error) => console.error("Could not persist room phase:", error))
   broadcastRoom(room)
 }
 
@@ -215,6 +200,7 @@ function finishRoom(room: Room) {
   room.timer = null
   room.endsAt = null
   room.phase = "COMPLETED"
+  void updatePersistedRoom(room).catch((error) => console.error("Could not persist completed room:", error))
   broadcastRoom(room)
 }
 
@@ -235,6 +221,24 @@ function roomSummary(room: Room) {
   }
 }
 
+async function persistRoom(room: Room) {
+  await query(
+    "INSERT INTO rooms (id, room_code, host_key, quiz_id, host_id, status, player_limit, auto_start_when_full, phase, round_index, question_index, started_at, ends_at, created_at) VALUES ($1, $2, $3, $4, $5, $6::room_status, $7, $8, $9, $10, $11, $12, $13, $14)",
+    [room.id, room.code, room.hostKey, room.quiz.id, room.hostId, room.phase === "LOBBY" ? "LOBBY" : room.phase === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS", room.playerLimit, room.autoStartWhenFull, room.phase === "LOBBY" ? 0 : room.phase === "QUESTION" ? 1 : room.phase === "REVEAL" ? 2 : room.phase === "LEADERBOARD" ? 3 : 4, room.roundIndex, room.questionIndex, room.startedAt ? new Date(room.startedAt) : null, room.endsAt ? new Date(room.endsAt) : null, room.createdAt],
+  )
+}
+
+async function persistPlayer(room: Room, player: Player) {
+  const teamResult = await query<{ id: string }>("INSERT INTO teams (room_id, name) VALUES ($1, $2) ON CONFLICT (room_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id", [room.id, player.teamName])
+  const teamId = teamResult.rows[0].id
+  const participantResult = await query<{ id: string }>("INSERT INTO participants (room_id, team_id, user_id, nickname, score, is_connected) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (room_id, user_id) DO UPDATE SET team_id = EXCLUDED.team_id, nickname = EXCLUDED.nickname, score = EXCLUDED.score, is_connected = EXCLUDED.is_connected RETURNING id", [room.id, teamId, player.id, player.nickname, player.score, player.isConnected])
+  player.participantId = participantResult.rows[0].id
+}
+
+async function updatePersistedRoom(room: Room) {
+  await query("UPDATE rooms SET status = $2::room_status, phase = $3, round_index = $4, question_index = $5, started_at = $6, ends_at = $7, updated_at = CURRENT_TIMESTAMP WHERE id = $1", [room.id, room.phase === "LOBBY" ? "LOBBY" : room.phase === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS", room.phase === "LOBBY" ? 0 : room.phase === "QUESTION" ? 1 : room.phase === "REVEAL" ? 2 : room.phase === "LEADERBOARD" ? 3 : 4, room.roundIndex, room.questionIndex, room.startedAt ? new Date(room.startedAt) : null, room.endsAt ? new Date(room.endsAt) : null])
+}
+
 function isHost(socket: ClientSocket, room: Room) {
   return socket.data.role === "host" && socket.data.roomCode === room.code
 }
@@ -245,15 +249,15 @@ app.get("/api/quizzes", async (request, response) => {
   response.json(quizzes)
 })
 app.post("/api/quizzes", async (request, response) => {
-  if (!await requireRole(request, response, "ADMIN")) return
+  const session = await requireRole(request, response, "ADMIN")
+  if (!session) return
   const quiz = request.body as Quiz
   if (!quiz?.title?.trim() || !Array.isArray(quiz.rounds) || quiz.rounds.length === 0) {
     response.status(400).json({ error: "A quiz title and at least one round are required." })
     return
   }
-  const savedQuiz = { ...quiz, id: quiz.id || randomUUID(), title: quiz.title.trim(), updatedAt: new Date().toISOString() }
-  quizzes = [savedQuiz, ...quizzes.filter((item) => item.id !== savedQuiz.id)]
-  await persistQuizzes()
+  const savedQuiz = await saveQuiz({ ...quiz, title: quiz.title.trim() }, session.userId)
+  quizzes = await loadQuizzes()
   response.status(200).json(savedQuiz)
 })
 
@@ -271,7 +275,8 @@ app.get("/api/rooms", async (request, response) => {
   })))
 })
 app.post("/api/rooms", async (request, response) => {
-  if (!await requireRole(request, response, "ADMIN")) return
+  const session = await requireRole(request, response, "ADMIN")
+  if (!session) return
   const playerLimit = request.body?.playerLimit ?? null
   const autoStartWhenFull = request.body?.autoStartWhenFull ?? false
   if (playerLimit !== null && (!Number.isInteger(playerLimit) || playerLimit < 2 || playerLimit > 500)) {
@@ -290,8 +295,10 @@ app.post("/api/rooms", async (request, response) => {
   let code = String(randomInt(100000, 1000000))
   while (rooms.has(code)) code = String(randomInt(100000, 1000000))
   const room: Room = {
+    id: randomUUID(),
     code,
     hostKey: randomUUID(),
+    hostId: session.userId,
     quiz,
     playerLimit,
     autoStartWhenFull,
@@ -304,6 +311,7 @@ app.post("/api/rooms", async (request, response) => {
     endsAt: null,
     timer: null,
   }
+  await persistRoom(room)
   rooms.set(code, room)
   io.emit("room:created", roomSummary(room))
   response.status(201).json({ code, hostKey: room.hostKey })
@@ -380,6 +388,7 @@ io.on("connection", (rawSocket) => {
         pointsAwarded: existing?.pointsAwarded,
         isCorrect: existing?.isCorrect,
       })
+      await persistPlayer(room, room.players.get(playerId)!)
       socket.data.role = "player"
       socket.data.playerId = playerId
       socket.data.roomCode = room.code
@@ -395,6 +404,7 @@ io.on("connection", (rawSocket) => {
     if (socket.data.role === "player" && room.phase === "LOBBY" && room.autoStartWhenFull && room.playerLimit !== null && room.players.size >= room.playerLimit) {
       setPhase(room, "QUESTION")
     } else {
+      void updatePersistedRoom(room).catch((error) => console.error("Could not persist room update:", error))
       broadcastRoom(room)
     }
   })
@@ -439,6 +449,9 @@ io.on("connection", (rawSocket) => {
     const result = applyAnswer(player, question, payload.answer, elapsed, duration)
     if (!result.ok) return acknowledge?.(result)
     acknowledge?.(result)
+    void query("UPDATE participants SET score = $2, is_connected = TRUE WHERE id = $1", [player.participantId, player.score]).catch((error) => console.error("Could not persist participant score:", error))
+    void query("UPDATE teams SET total_score = (SELECT COALESCE(SUM(score), 0) FROM participants WHERE team_id = teams.id) WHERE id = (SELECT team_id FROM participants WHERE id = $1)", [player.participantId]).catch((error) => console.error("Could not persist team score:", error))
+    void query("INSERT INTO submissions (team_id, question_id, participant_id, submitted_answer, is_correct, points_awarded) SELECT team_id, $2, id, $3::jsonb, $4, $5 FROM participants WHERE id = $1 ON CONFLICT (participant_id, question_id) DO UPDATE SET submitted_answer = EXCLUDED.submitted_answer, is_correct = EXCLUDED.is_correct, points_awarded = EXCLUDED.points_awarded", [player.participantId, question.id, JSON.stringify(payload.answer), result.isCorrect, result.pointsAwarded ?? 0]).catch((error) => console.error("Could not persist submission:", error))
     broadcastRoom(room)
   })
 
@@ -449,6 +462,7 @@ io.on("connection", (rawSocket) => {
     const player = room.players.get(socket.data.playerId ?? "")
     if (player?.socketId === socket.id) {
       player.isConnected = false
+      void query("UPDATE participants SET is_connected = FALSE WHERE id = $1", [player.participantId]).catch((error) => console.error("Could not persist disconnect:", error))
       broadcastRoom(room)
     }
   })
@@ -456,6 +470,6 @@ io.on("connection", (rawSocket) => {
 
 const port = Number(process.env.PORT ?? 4100)
 validateAuthConfiguration()
-await loadQuizzes()
+await loadQuizzes().then((loadedQuizzes) => { quizzes = loadedQuizzes })
 await loadUsers()
 server.listen(port, () => console.log(`TechIs Quiz API and Socket.IO listening on http://localhost:${port}`))

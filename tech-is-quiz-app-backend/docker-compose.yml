@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: techis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: techis_quiz
+      POSTGRES_USER: techis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techis_local_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techis -d techis_quiz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

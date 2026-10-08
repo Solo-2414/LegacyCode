@@ -1,17 +1,13 @@
 import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto"
 import { promisify } from "node:util"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import path from "node:path"
 import { SignJWT, jwtVerify } from "jose"
-import { dataDirectory } from "./paths.js"
+import { query } from "./database.js"
 
 export type UserRole = "ADMIN" | "PARTICIPANT"
 export type SessionUser = { userId: string; name: string; role: UserRole }
 export type UserRecord = SessionUser & { email: string; passwordSalt: string; passwordHash: string }
 
-const userFile = path.join(dataDirectory, "users.json")
 const scrypt = promisify(nodeScrypt)
-let users: UserRecord[] = []
 
 function sessionSecret() {
   const secret = process.env.AUTH_SECRET
@@ -20,19 +16,7 @@ function sessionSecret() {
 }
 
 export async function loadUsers() {
-  try {
-    users = JSON.parse(await readFile(userFile, "utf8")) as UserRecord[]
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-    users = []
-  }
-}
-
-async function persistUsers() {
-  await mkdir(dataDirectory, { recursive: true })
-  const temporaryFile = `${userFile}.${randomUUID()}.tmp`
-  await writeFile(temporaryFile, JSON.stringify(users, null, 2), "utf8")
-  await rename(temporaryFile, userFile)
+  await query("SELECT 1 FROM users LIMIT 1")
 }
 
 async function hashPassword(password: string, salt: string) {
@@ -41,7 +25,9 @@ async function hashPassword(password: string, salt: string) {
 }
 
 export async function authenticateUser(email: string, password: string) {
-  const user = users.find((item) => item.email === email.trim().toLocaleLowerCase())
+  const result = await query<UserRow>("SELECT id, email, name, role, password_salt, password_hash FROM users WHERE email = $1", [email.trim().toLocaleLowerCase()])
+  const row = result.rows[0]
+  const user = row && toUserRecord(row)
   if (!user) return null
   const actual = Buffer.from(await hashPassword(password, user.passwordSalt), "base64url")
   const expected = Buffer.from(user.passwordHash, "base64url")
@@ -53,19 +39,24 @@ export async function createUser(email: string, name: string, role: UserRole, pa
   const normalizedEmail = email.trim().toLocaleLowerCase()
   if (!normalizedEmail || !name.trim() || password.length < 12) throw new Error("Email, name, and a password of at least 12 characters are required.")
   if (role !== "ADMIN" && role !== "PARTICIPANT") throw new Error("Role must be ADMIN or PARTICIPANT.")
-  if (users.some((user) => user.email === normalizedEmail)) throw new Error("A user with this email already exists.")
   const passwordSalt = randomBytes(16).toString("base64url")
-  const user: UserRecord = {
-    userId: randomUUID(),
-    email: normalizedEmail,
-    name: name.trim(),
-    role,
-    passwordSalt,
-    passwordHash: await hashPassword(password, passwordSalt),
+  const passwordHash = await hashPassword(password, passwordSalt)
+  try {
+    const result = await query<UserRow>(
+      "INSERT INTO users (id, email, name, role, password_salt, password_hash) VALUES ($1, $2, $3, $4::user_role, $5, $6) RETURNING id, email, name, role, password_salt, password_hash",
+      [randomUUID(), normalizedEmail, name.trim(), role, passwordSalt, passwordHash],
+    )
+    return toUserRecord(result.rows[0])
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") throw new Error("A user with this email already exists.")
+    throw error
   }
-  users = [...users, user]
-  await persistUsers()
-  return user
+}
+
+type UserRow = { id: string; email: string; name: string; role: UserRole; password_salt: string; password_hash: string }
+
+function toUserRecord(row: UserRow): UserRecord {
+  return { userId: row.id, email: row.email, name: row.name, role: row.role, passwordSalt: row.password_salt, passwordHash: row.password_hash }
 }
 
 export async function createSessionToken(user: UserRecord) {

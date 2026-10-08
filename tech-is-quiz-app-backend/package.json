@@ -7,19 +7,25 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc --noEmit",
     "start": "tsx src/index.ts",
-    "create-user": "tsx src/create-user.ts"
+    "create-user": "tsx src/create-user.ts",
+    "db:up": "docker compose up -d",
+    "migrate:postgres": "node scripts/migrate-postgres.mjs",
+    "migrate:json": "node scripts/migrate-json-to-postgres.mjs",
+    "verify:postgres": "node scripts/verify-postgres.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^18.0.5",
     "express": "^5.1.0",
     "jose": "^6.2.12",
+    "pg": "^8.23.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.20.3",
     "typescript": "^5.7.3"
   }
