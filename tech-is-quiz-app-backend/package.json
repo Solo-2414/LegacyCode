@@ -11,7 +11,8 @@
     "db:up": "docker compose up -d",
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
     "migrate:json": "node scripts/migrate-json-to-postgres.mjs",
-    "verify:postgres": "node scripts/verify-postgres.mjs"
+    "verify:postgres": "node scripts/verify-postgres.mjs",
+    "seed:superadmin": "node scripts/seed-superadmin.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

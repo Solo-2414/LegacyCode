@@ -28,7 +28,7 @@ export function LandingPage() {
         setError(result.error ?? "Email or password is incorrect.")
         return
       }
-      router.replace(result.session.role === "ADMIN" ? "/admin/dashboard" : "/join")
+      router.replace(result.session.role === "SUPERADMIN" ? "/superadmin" : result.session.role === "ADMIN" ? "/admin/dashboard" : "/join")
       router.refresh()
     } catch {
       setError("Could not reach the sign-in service. Try again in a moment.")

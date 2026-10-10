@@ -119,7 +119,7 @@ export function AdminDashboard() {
     <QuizShell>
       <section className="mx-auto max-w-[1100px]" aria-labelledby="dashboard-title">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <PageHeading id="dashboard-title" eyebrow="Host workspace" title={<>Your quiz <span className="text-gradient">control room.</span></>} description="Create a room, bring everyone together, and keep the energy moving." />
+          <PageHeading id="dashboard-title" eyebrow="Host workspace" title={<>Quiz <span className="text-gradient">control room.</span></>} description="Create rooms, manage quiz content, and keep every session moving." />
           {!isCreatingQuiz && !editingQuiz && <button type="button" onClick={() => setIsCreatingQuiz(true)} className={`${primaryButtonClass} mb-8 shrink-0 sm:mb-8`}><Plus data-icon="inline-start" /> Create Quiz</button>}
         </div>
         {serviceError && <p role="alert" className="mb-5 rounded-xl border border-[#fa718d]/20 bg-[#fa718d]/[0.07] px-4 py-3 text-sm text-[#ffa0b1]">{serviceError}</p>}

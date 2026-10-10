@@ -16,6 +16,7 @@ export type LiveQuestion = {
   id: string
   type: "MULTIPLE_CHOICE" | "TRUE_FALSE" | "IDENTIFICATION"
   questionText: string
+  explanation?: string
   options: string[]
   points: number
   timeLimitSec: number

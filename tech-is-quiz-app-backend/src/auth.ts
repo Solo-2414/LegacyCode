@@ -3,7 +3,7 @@ import { promisify } from "node:util"
 import { SignJWT, jwtVerify } from "jose"
 import { query } from "./database.js"
 
-export type UserRole = "ADMIN" | "PARTICIPANT"
+export type UserRole = "SUPERADMIN" | "ADMIN" | "PARTICIPANT"
 export type SessionUser = { userId: string; name: string; role: UserRole }
 export type UserRecord = SessionUser & { email: string; passwordSalt: string; passwordHash: string }
 
@@ -38,7 +38,7 @@ export async function authenticateUser(email: string, password: string) {
 export async function createUser(email: string, name: string, role: UserRole, password: string) {
   const normalizedEmail = email.trim().toLocaleLowerCase()
   if (!normalizedEmail || !name.trim() || password.length < 12) throw new Error("Email, name, and a password of at least 12 characters are required.")
-  if (role !== "ADMIN" && role !== "PARTICIPANT") throw new Error("Role must be ADMIN or PARTICIPANT.")
+  if (role !== "SUPERADMIN" && role !== "ADMIN" && role !== "PARTICIPANT") throw new Error("Role must be SUPERADMIN, ADMIN, or PARTICIPANT.")
   const passwordSalt = randomBytes(16).toString("base64url")
   const passwordHash = await hashPassword(password, passwordSalt)
   try {
@@ -71,7 +71,7 @@ export async function createSessionToken(user: UserRecord) {
 export async function verifySessionToken(token: string): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, sessionSecret(), { algorithms: ["HS256"] })
-    if (!payload.sub || typeof payload.name !== "string" || (payload.role !== "ADMIN" && payload.role !== "PARTICIPANT")) return null
+    if (!payload.sub || typeof payload.name !== "string" || (payload.role !== "SUPERADMIN" && payload.role !== "ADMIN" && payload.role !== "PARTICIPANT")) return null
     return { userId: payload.sub, name: payload.name, role: payload.role }
   } catch {
     return null

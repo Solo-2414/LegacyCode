@@ -13,6 +13,17 @@ const question: QuizQuestion = {
   timeLimitSec: 30,
 }
 
+const trueFalseQuestion: QuizQuestion = {
+  id: "q2",
+  type: "TRUE_FALSE",
+  questionText: "The statement is true.",
+  options: ["True", "False"],
+  correctOptions: [0],
+  acceptedAnswers: [],
+  points: 100,
+  timeLimitSec: 30,
+}
+
 describe("applyAnswer", () => {
   it("scores a correct answer using the remaining time", () => {
     const player: AnswerablePlayer = { score: 25 }
@@ -52,5 +63,23 @@ describe("applyAnswer", () => {
     assert.equal(result.ok, false)
     assert.equal(result.error, "Your answer is invalid.")
     assert.equal(player.score, 25)
+  })
+
+  it("scores True/False answers by normalized semantic value", () => {
+    for (const answer of [[0], "true", "TRUE", true]) {
+      const player: AnswerablePlayer = { score: 0 }
+      const result = applyAnswer(player, trueFalseQuestion, answer, 30_000, 30_000)
+      assert.equal(result.ok, true)
+      assert.equal(result.isCorrect, true)
+      assert.equal(player.score, 100)
+    }
+  })
+
+  it("rejects the opposite normalized True/False value", () => {
+    const player: AnswerablePlayer = { score: 0 }
+    const result = applyAnswer(player, trueFalseQuestion, "false", 30_000, 30_000)
+    assert.equal(result.ok, true)
+    assert.equal(result.isCorrect, false)
+    assert.equal(player.score, 0)
   })
 })

@@ -27,8 +27,8 @@ export function AuthenticatedNav() {
 
   return (
     <nav aria-label="Account navigation" className="flex items-center gap-2">
-      <Link href={session.role === "ADMIN" ? "/admin/dashboard" : "/join"} className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs font-medium text-white/65 transition hover:border-[#10d7ac]/30 hover:bg-[#10d7ac]/[0.08] hover:text-white">
-        {session.role === "ADMIN" ? "Host dashboard" : "Join a room"}
+      <Link href={session.role === "SUPERADMIN" ? "/superadmin" : session.role === "ADMIN" ? "/admin/dashboard" : "/join"} className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs font-medium text-white/65 transition hover:border-[#10d7ac]/30 hover:bg-[#10d7ac]/[0.08] hover:text-white">
+        {session.role === "SUPERADMIN" ? "Platform dashboard" : session.role === "ADMIN" ? "Host dashboard" : "Join a room"}
       </Link>
       <span className="hidden max-w-36 truncate text-xs text-white/40 sm:inline" title={session.name}>{session.name}</span>
       <button type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out" className="inline-flex size-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-white/55 transition hover:border-[#fa718d]/30 hover:bg-[#fa718d]/[0.08] hover:text-[#ffa0b1]"><LogOut className="size-4" /></button>

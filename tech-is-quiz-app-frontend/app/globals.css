@@ -157,6 +157,20 @@
   * {
     @apply border-border outline-ring/50;
   }
+  select {
+    color: #f8fafc;
+    background-color: #141b25;
+    color-scheme: dark;
+  }
+  select option {
+    color: #f8fafc;
+    background-color: #141b25;
+  }
+  select option:checked,
+  select option:hover {
+    color: #08251f;
+    background-color: #10d7ac;
+  }
   body {
     @apply bg-background text-foreground;
   }

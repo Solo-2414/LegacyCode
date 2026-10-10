@@ -4,7 +4,7 @@ import express, { type Request, type Response } from "express"
 import { createServer } from "node:http"
 import { randomInt, randomUUID } from "node:crypto"
 import { Server, type Socket } from "socket.io"
-import { authenticateUser, createSessionToken, loadUsers, validateAuthConfiguration, verifySessionToken, type SessionUser, type UserRole } from "./auth.js"
+import { authenticateUser, createSessionToken, createUser, loadUsers, validateAuthConfiguration, verifySessionToken, type SessionUser, type UserRole } from "./auth.js"
 import { applyAnswer } from "./game.js"
 import { query } from "./database.js"
 import { loadQuizzes, saveQuiz, type Quiz } from "./quiz-store.js"
@@ -14,6 +14,7 @@ type QuizQuestion = {
   id: string
   type: "MULTIPLE_CHOICE" | "TRUE_FALSE" | "IDENTIFICATION"
   questionText: string
+  explanation?: string
   options: string[]
   correctOptions: number[]
   acceptedAnswers: string[]
@@ -24,6 +25,7 @@ type QuizRound = { id: string; title: string; questions: QuizQuestion[] }
 type Player = {
   id: string
   participantId?: string
+  teamId?: string
   nickname: string
   teamName: string
   score: number
@@ -81,11 +83,15 @@ async function requireRole(request: Request, response: Response, role: UserRole)
     response.status(401).json({ error: "Authentication required." })
     return null
   }
-  if (session.role !== role) {
+  if (session.role !== role && !(role === "ADMIN" && session.role === "SUPERADMIN")) {
     response.status(403).json({ error: "This account does not have access to this resource." })
     return null
   }
   return session
+}
+
+async function requireSuperAdmin(request: Request, response: Response) {
+  return requireRole(request, response, "SUPERADMIN")
 }
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -147,6 +153,7 @@ function roomState(room: Room) {
       points: question.points,
       timeLimitSec: question.timeLimitSec,
       ...(reveal ? { correctOptions: question.correctOptions, acceptedAnswers: question.acceptedAnswers } : {}),
+      ...(reveal && question.explanation ? { explanation: question.explanation } : {}),
     } : null,
     teams: [...teamSizes].map(([name, playerCount]) => ({ name, playerCount })).sort((first, second) => first.name.localeCompare(second.name)),
     endsAt: room.phase === "QUESTION" ? room.endsAt : null,
@@ -233,6 +240,19 @@ async function persistPlayer(room: Room, player: Player) {
   const teamId = teamResult.rows[0].id
   const participantResult = await query<{ id: string }>("INSERT INTO participants (room_id, team_id, user_id, nickname, score, is_connected) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (room_id, user_id) DO UPDATE SET team_id = EXCLUDED.team_id, nickname = EXCLUDED.nickname, score = EXCLUDED.score, is_connected = EXCLUDED.is_connected RETURNING id", [room.id, teamId, player.id, player.nickname, player.score, player.isConnected])
   player.participantId = participantResult.rows[0].id
+  player.teamId = teamId
+}
+
+async function findPersistedParticipant(participantId: string, room: Room, userId: string) {
+  const result = await query<{ participant_id: string; team_id: string; team_name: string; nickname: string; score: number }>(
+    "SELECT p.id AS participant_id, p.team_id, t.name AS team_name, p.nickname, p.score FROM participants p JOIN teams t ON t.id = p.team_id WHERE p.id = $1 AND p.room_id = $2 AND p.user_id = $3",
+    [participantId, room.id, userId],
+  )
+  return result.rows[0]
+}
+
+async function reconnectPersistedParticipant(participantId: string) {
+  await query("UPDATE participants SET is_connected = TRUE WHERE id = $1", [participantId])
 }
 
 async function updatePersistedRoom(room: Room) {
@@ -273,6 +293,95 @@ app.get("/api/rooms", async (request, response) => {
     playerCount: room.players.size,
     createdAt: room.createdAt,
   })))
+})
+
+app.get("/api/superadmin/overview", async (request, response) => {
+  if (!await requireSuperAdmin(request, response)) return
+  const [stats, activity, users, quizRows, roomRows] = await Promise.all([
+    query(`SELECT
+      (SELECT COUNT(*)::int FROM users) AS total_users,
+      (SELECT COUNT(*)::int FROM users WHERE role = 'ADMIN') AS admin_users,
+      (SELECT COUNT(*)::int FROM users WHERE role = 'SUPERADMIN') AS superadmin_users,
+      (SELECT COUNT(*)::int FROM users WHERE role = 'PARTICIPANT') AS participant_users,
+      (SELECT COUNT(*)::int FROM quizzes) AS total_quizzes,
+      (SELECT COUNT(*)::int FROM rooms) AS total_rooms,
+      (SELECT COUNT(*)::int FROM rooms WHERE status = 'IN_PROGRESS') AS active_rooms,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM participants p JOIN rooms r ON r.id = p.room_id WHERE r.status IN ('LOBBY', 'IN_PROGRESS') AND p.is_connected = TRUE) AS live_players,
+      (SELECT COUNT(*)::int FROM submissions WHERE created_at >= CURRENT_DATE) AS questions_answered_today`),
+    query(`SELECT minute::timestamp AS date, COUNT(s.id)::int AS answers, COUNT(DISTINCT s.participant_id)::int AS players
+      FROM generate_series(date_trunc('minute', CURRENT_TIMESTAMP - INTERVAL '59 minutes'), date_trunc('minute', CURRENT_TIMESTAMP), INTERVAL '1 minute') AS minute
+      LEFT JOIN submissions s ON s.created_at >= minute AND s.created_at < minute + INTERVAL '1 minute'
+      GROUP BY minute ORDER BY minute`),
+    query("SELECT id, email, name, role, created_at FROM users ORDER BY created_at DESC"),
+    query("SELECT q.id, q.title, q.description, q.created_at, q.updated_at, u.name AS host_name, COUNT(DISTINCT r.id)::int AS round_count, COUNT(DISTINCT question.id)::int AS question_count FROM quizzes q JOIN users u ON u.id = q.host_id LEFT JOIN rounds r ON r.quiz_id = q.id LEFT JOIN questions question ON question.round_id = r.id GROUP BY q.id, u.name ORDER BY q.updated_at DESC"),
+    query("SELECT r.id, r.room_code, r.status, r.created_at, r.updated_at, q.title AS quiz_title, u.name AS host_name, COUNT(DISTINCT p.id)::int AS participant_count FROM rooms r JOIN quizzes q ON q.id = r.quiz_id JOIN users u ON u.id = r.host_id LEFT JOIN participants p ON p.room_id = r.id GROUP BY r.id, q.title, u.name ORDER BY r.created_at DESC LIMIT 100"),
+  ])
+  response.json({ stats: stats.rows[0], activity: activity.rows, users: users.rows, quizzes: quizRows.rows, rooms: roomRows.rows })
+})
+
+app.post("/api/superadmin/users", async (request, response) => {
+  if (!await requireSuperAdmin(request, response)) return
+  try {
+    const user = await createUser(request.body?.email ?? "", request.body?.name ?? "", request.body?.role ?? "PARTICIPANT", request.body?.password ?? "")
+    response.status(201).json({ id: user.userId, email: user.email, name: user.name, role: user.role })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Could not create user." })
+  }
+})
+
+app.patch("/api/superadmin/users/:id", async (request, response) => {
+  const session = await requireSuperAdmin(request, response)
+  if (!session) return
+  const role = request.body?.role
+  const name = typeof request.body?.name === "string" ? request.body.name.trim() : undefined
+  if (role !== "SUPERADMIN" && role !== "ADMIN" && role !== "PARTICIPANT") return response.status(400).json({ error: "Invalid user role." })
+  if (session.userId === request.params.id && role !== "SUPERADMIN") return response.status(400).json({ error: "You cannot demote your own super-admin account." })
+  const result = await query("UPDATE users SET role = $2::user_role, name = COALESCE(NULLIF($3, ''), name), updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, email, name, role, created_at", [request.params.id, role, name ?? ""])
+  if (!result.rowCount) return response.status(404).json({ error: "User not found." })
+  response.json(result.rows[0])
+})
+
+app.delete("/api/superadmin/users/:id", async (request, response) => {
+  const session = await requireSuperAdmin(request, response)
+  if (!session) return
+  if (session.userId === request.params.id) return response.status(400).json({ error: "You cannot delete your own account." })
+  await query("DELETE FROM rooms WHERE host_id = $1", [request.params.id])
+  const result = await query("DELETE FROM users WHERE id = $1 RETURNING id", [request.params.id])
+  if (!result.rowCount) return response.status(404).json({ error: "User not found." })
+  response.status(204).end()
+})
+
+app.patch("/api/superadmin/quizzes/:id", async (request, response) => {
+  if (!await requireSuperAdmin(request, response)) return
+  const title = typeof request.body?.title === "string" ? request.body.title.trim() : ""
+  const description = typeof request.body?.description === "string" ? request.body.description.trim() : ""
+  if (!title) return response.status(400).json({ error: "Quiz title is required." })
+  const result = await query("UPDATE quizzes SET title = $2, description = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, title, description, updated_at", [request.params.id, title, description])
+  if (!result.rowCount) return response.status(404).json({ error: "Quiz not found." })
+  quizzes = await loadQuizzes()
+  response.json(result.rows[0])
+})
+
+app.delete("/api/superadmin/quizzes/:id", async (request, response) => {
+  if (!await requireSuperAdmin(request, response)) return
+  for (const [code, room] of rooms) if (room.quiz.id === request.params.id) rooms.delete(code)
+  await query("DELETE FROM rooms WHERE quiz_id = $1", [request.params.id])
+  const result = await query("DELETE FROM quizzes WHERE id = $1 RETURNING id", [request.params.id])
+  if (!result.rowCount) return response.status(404).json({ error: "Quiz not found." })
+  quizzes = await loadQuizzes()
+  response.status(204).end()
+})
+
+app.post("/api/superadmin/rooms/:code/close", async (request, response) => {
+  if (!await requireSuperAdmin(request, response)) return
+  const room = findRoom(request.params.code)
+  if (room) {
+    finishRoom(room)
+    return response.json({ ok: true, room: roomSummary(room) })
+  }
+  const result = await query("UPDATE rooms SET status = 'COMPLETED', phase = 4, ends_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE room_code = $1 RETURNING room_code", [request.params.code])
+  if (!result.rowCount) return response.status(404).json({ error: "Room not found." })
+  response.json({ ok: true, roomCode: request.params.code })
 })
 app.post("/api/rooms", async (request, response) => {
   const session = await requireRole(request, response, "ADMIN")
@@ -351,7 +460,7 @@ io.on("connection", (rawSocket) => {
     socket.emit("room:state", roomState(room))
   })
 
-  socket.on("room:join", async (payload: { code?: string; role?: string; hostKey?: string; playerId?: string; nickname?: string; teamName?: string }, acknowledge?: (result: { ok: boolean; error?: string }) => void) => {
+  socket.on("room:join", async (payload: { code?: string; role?: string; hostKey?: string; participantId?: string; playerId?: string; nickname?: string; teamName?: string }, acknowledge?: (result: { ok: boolean; error?: string; participantId?: string; teamId?: string }) => void) => {
     const room = findRoom(payload?.code)
     if (!room) return acknowledge?.({ ok: false, error: "Room not found. Check the six-digit code." })
     if (payload.role === "host") {
@@ -365,30 +474,38 @@ io.on("connection", (rawSocket) => {
       if (room.phase === "COMPLETED") return acknowledge?.({ ok: false, error: "This quiz has already ended." })
       const playerId = socket.data.userId
       if (!playerId) return acknowledge?.({ ok: false, error: "Session user is missing." })
+      const persisted = payload.participantId ? await findPersistedParticipant(payload.participantId, room, playerId) : undefined
+      if (payload.participantId && !persisted) return acknowledge?.({ ok: false, error: "That participant session is no longer valid. Join the room again." })
       const existing = room.players.get(playerId)
       if (!existing && room.playerLimit !== null && room.players.size >= room.playerLimit) {
         return acknowledge?.({ ok: false, error: "This room is full." })
       }
-      const nickname = normalizeNickname(payload.nickname ?? "")
-      const nicknameError = validateNickname(payload.nickname ?? "")
+      const nickname = persisted?.nickname ?? normalizeNickname(payload.nickname ?? "")
+      const nicknameError = persisted ? undefined : validateNickname(payload.nickname ?? "")
       if (nicknameError) return acknowledge?.({ ok: false, error: nicknameError })
-      const teamName = validateTeamName(payload.teamName ?? "") || existing?.teamName
-      const teamNameError = validateTeamNameInput(payload.teamName ?? "")
+      const teamName = persisted?.team_name ?? (validateTeamName(payload.teamName ?? "") || existing?.teamName)
+      const teamNameError = persisted ? undefined : validateTeamNameInput(payload.teamName ?? "")
       if (!teamName || (!existing && teamNameError)) return acknowledge?.({ ok: false, error: teamNameError ?? "Choose a team to join." })
       const nameTaken = [...room.players.values()].some((player) => player.id !== playerId && player.nickname.toLocaleLowerCase() === nickname.toLocaleLowerCase())
       if (nameTaken) return acknowledge?.({ ok: false, error: "That nickname is already in this room." })
-      room.players.set(playerId, {
+      const teamAlreadyExists = [...room.players.values()].some((player) => player.teamName.toLocaleLowerCase() === teamName.toLocaleLowerCase())
+      const player: Player = {
         id: playerId,
+        participantId: persisted?.participant_id,
+        teamId: persisted?.team_id,
         nickname,
         teamName,
-        score: existing?.score ?? 0,
+        score: persisted?.score ?? existing?.score ?? 0,
         isConnected: true,
         socketId: socket.id,
         answer: existing?.answer,
         pointsAwarded: existing?.pointsAwarded,
         isCorrect: existing?.isCorrect,
-      })
-      await persistPlayer(room, room.players.get(playerId)!)
+      }
+      room.players.set(playerId, player)
+      if (persisted) await reconnectPersistedParticipant(persisted.participant_id)
+      else await persistPlayer(room, player)
+      if (!teamAlreadyExists) io.to(room.code).emit("room:team-created", { name: teamName, playerCount: 1 })
       socket.data.role = "player"
       socket.data.playerId = playerId
       socket.data.roomCode = room.code
@@ -400,7 +517,8 @@ io.on("connection", (rawSocket) => {
         players: [...room.players.values()].map((player) => ({ id: player.id, nickname: player.nickname, teamName: player.teamName, isConnected: player.isConnected })),
       })
     }
-    acknowledge?.({ ok: true })
+    const joinedPlayer = socket.data.role === "player" ? room.players.get(socket.data.playerId!) : undefined
+    acknowledge?.({ ok: true, participantId: joinedPlayer?.participantId, teamId: joinedPlayer?.teamId })
     if (socket.data.role === "player" && room.phase === "LOBBY" && room.autoStartWhenFull && room.playerLimit !== null && room.players.size >= room.playerLimit) {
       setPhase(room, "QUESTION")
     } else {
@@ -438,11 +556,11 @@ io.on("connection", (rawSocket) => {
     }
     finishRoom(room)
   })
-  socket.on("room:submit", (payload: { code?: string; playerId?: string; answer?: unknown }, acknowledge?: (result: { ok: boolean; error?: string; isCorrect?: boolean; pointsAwarded?: number }) => void) => {
+  socket.on("room:submit", (payload: { code?: string; playerId?: string; participantId?: string; teamId?: string; answer?: unknown }, acknowledge?: (result: { ok: boolean; error?: string; isCorrect?: boolean; pointsAwarded?: number }) => void) => {
     const room = findRoom(payload?.code)
     const player = room?.players.get(socket.data.playerId ?? "")
     const question = room ? currentQuestion(room) : undefined
-    if (!room || !player || player.socketId !== socket.id || socket.data.role !== "player" || socket.data.appRole !== "PARTICIPANT") return acknowledge?.({ ok: false, error: "Player session not found." })
+    if (!room || !player || player.socketId !== socket.id || socket.data.role !== "player" || socket.data.appRole !== "PARTICIPANT" || (payload.participantId && payload.participantId !== player.participantId) || (payload.teamId && payload.teamId !== player.teamId)) return acknowledge?.({ ok: false, error: "Player session not found." })
     if (room.phase !== "QUESTION" || !question || !room.startedAt || !room.endsAt || Date.now() > room.endsAt) return acknowledge?.({ ok: false, error: "Answers are locked." })
     const duration = question.timeLimitSec * 1000
     const elapsed = Math.max(0, Date.now() - room.startedAt)

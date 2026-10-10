@@ -19,7 +19,9 @@ const migrationFiles = [
 ]
 
 try {
-  for (const migrationFile of migrationFiles) {
+  const existingSchema = await pool.query("SELECT to_regclass('public.users') IS NOT NULL AS exists")
+  const filesToApply = existingSchema.rows[0].exists ? migrationFiles.slice(1) : migrationFiles
+  for (const migrationFile of filesToApply) {
     const sql = await readFile(migrationFile, "utf8")
     await pool.query(sql)
     console.log(`Applied ${migrationFile}`)

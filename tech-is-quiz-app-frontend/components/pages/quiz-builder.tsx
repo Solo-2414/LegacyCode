@@ -4,12 +4,15 @@ import { useState, type FormEvent } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { fieldClass, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 
+const builderFieldClass = "h-10 w-full rounded-lg border border-white/[0.11] bg-white/[0.035] px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#10d7ac]/55 focus:ring-2 focus:ring-[#10d7ac]/15"
+
 export type QuestionType = "MULTIPLE_CHOICE" | "TRUE_FALSE" | "IDENTIFICATION"
 
 export type QuizQuestion = {
   id: string
   type: QuestionType
   questionText: string
+  explanation?: string
   options: string[]
   correctOptions: number[]
   acceptedAnswers: string[]
@@ -40,6 +43,7 @@ function createQuestion(): QuizQuestion {
     id: createId(),
     type: "MULTIPLE_CHOICE",
     questionText: "",
+    explanation: "",
     options: ["", "", "", ""],
     correctOptions: [],
     acceptedAnswers: [],
@@ -113,12 +117,12 @@ export function QuizBuilder({ quiz, onCancel, onSave }: { quiz?: SavedQuiz; onCa
         <button type="button" onClick={onCancel} className={secondaryButtonClass}>Cancel</button>
       </div>
 
-      <section className={`${surfaceClass} grid gap-4 p-5 sm:grid-cols-2 sm:p-6`}>
+      <section className={`${surfaceClass} grid grid-cols-1 gap-6 p-5 md:grid-cols-2 sm:p-6`}>
         <label className="flex flex-col gap-2 text-xs font-semibold text-white/65">Quiz title
-          <input className={fieldClass} maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Product thinking" required />
+          <input className={builderFieldClass} maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Product thinking" required />
         </label>
         <label className="flex flex-col gap-2 text-xs font-semibold text-white/65">Description <span className="text-[10px] font-normal text-white/35">Optional</span>
-          <input className={fieldClass} maxLength={240} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What will players explore?" />
+          <input className={builderFieldClass} maxLength={240} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What will players explore?" />
         </label>
       </section>
 
@@ -133,7 +137,7 @@ export function QuizBuilder({ quiz, onCancel, onSave }: { quiz?: SavedQuiz; onCa
         <div className="space-y-4 p-4 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="round-title">Round title</label>
-            <input id="round-title" className={`${fieldClass} max-w-sm`} value={activeRound.title} onChange={(event) => updateRound(activeRound.id, (round) => ({ ...round, title: event.target.value }))} aria-label="Round title" />
+            <input id="round-title" className={`${builderFieldClass} max-w-sm`} value={activeRound.title} onChange={(event) => updateRound(activeRound.id, (round) => ({ ...round, title: event.target.value }))} aria-label="Round title" />
             {rounds.length > 1 && <button type="button" aria-label={`Delete ${activeRound.title}`} onClick={() => {
               const nextRounds = rounds.filter((round) => round.id !== activeRound.id)
               setRounds(nextRounds)
@@ -145,33 +149,36 @@ export function QuizBuilder({ quiz, onCancel, onSave }: { quiz?: SavedQuiz; onCa
             <div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-xs font-bold uppercase tracking-[0.12em] text-white/50">Question {questionIndex + 1}</h4>
               {activeRound.questions.length > 1 && <button type="button" aria-label={`Delete question ${questionIndex + 1}`} onClick={() => updateRound(activeRound.id, (round) => ({ ...round, questions: round.questions.filter((item) => item.id !== question.id) }))} className="inline-flex size-9 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/[0.06] hover:text-[#ffa0b1]"><Trash2 className="size-4" /></button>}
             </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
-              <label className="flex flex-col gap-2 text-xs font-semibold text-white/60">Question
-                <textarea className={`${fieldClass} min-h-20 resize-y py-3`} maxLength={500} value={question.questionText} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, questionText: event.target.value }))} placeholder="Write your question" />
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <label className="flex flex-col gap-2 text-xs font-semibold text-white/60 lg:col-span-2">Question
+                <textarea className={`${builderFieldClass} min-h-28 h-auto resize-y`} maxLength={500} value={question.questionText} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, questionText: event.target.value }))} placeholder="Write your question" />
               </label>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
+              <div className="flex flex-col gap-4 lg:col-span-1">
                 <label className="flex flex-col gap-2 text-xs font-semibold text-white/60">Type
-                  <select className={fieldClass} value={question.type} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, type: event.target.value as QuestionType, options: event.target.value === "TRUE_FALSE" ? ["True", "False"] : event.target.value === "MULTIPLE_CHOICE" ? ["", "", "", ""] : [], correctOptions: [], acceptedAnswers: [] }))}>
+                  <select className={builderFieldClass} value={question.type} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, type: event.target.value as QuestionType, options: event.target.value === "TRUE_FALSE" ? ["True", "False"] : event.target.value === "MULTIPLE_CHOICE" ? ["", "", "", ""] : [], correctOptions: [], acceptedAnswers: [] }))}>
                     <option value="MULTIPLE_CHOICE">Multiple choice</option><option value="TRUE_FALSE">True or false</option><option value="IDENTIFICATION">Identification</option>
                   </select>
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-semibold text-white/60">Points
-                  <input className={fieldClass} type="number" min={1} max={10000} step={1} value={question.points} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, points: Number(event.target.value) }))} />
+                  <input className={builderFieldClass} type="number" min={1} max={10000} step={1} value={question.points} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, points: Number(event.target.value) }))} />
                 </label>
-                <label className="col-span-2 flex flex-col gap-2 text-xs font-semibold text-white/60 sm:col-span-1">Time limit
-                  <select className={fieldClass} value={question.timeLimitSec} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, timeLimitSec: Number(event.target.value) }))}>{[10, 15, 30, 60].map((seconds) => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select>
+                <label className="flex flex-col gap-2 text-xs font-semibold text-white/60">Time limit
+                  <select className={builderFieldClass} value={question.timeLimitSec} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, timeLimitSec: Number(event.target.value) }))}>{[10, 15, 30, 60].map((seconds) => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select>
                 </label>
               </div>
             </div>
 
-            {question.type === "IDENTIFICATION" ? <label className="mt-4 flex flex-col gap-2 text-xs font-semibold text-white/60">Accepted answers <span className="text-[10px] font-normal text-white/35">Separate alternatives with commas. Matching ignores case and surrounding spaces.</span>
-              <input className={fieldClass} value={question.acceptedAnswers.join(", ")} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, acceptedAnswers: event.target.value.split(",").map((answer) => answer.trim()).filter(Boolean) }))} placeholder="e.g. machine learning, ML" />
+            {question.type === "IDENTIFICATION" ? <label className="mt-6 flex w-full flex-col gap-2 border-t border-white/[0.08] pt-5 text-xs font-semibold text-white/60">Accepted answers <span className="text-[10px] font-normal text-white/35">Separate alternatives with commas. Matching ignores case and surrounding spaces.</span>
+              <input className={builderFieldClass} value={question.acceptedAnswers.join(", ")} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, acceptedAnswers: event.target.value.split(",").map((answer) => answer.trim()).filter(Boolean) }))} placeholder="e.g. machine learning, ML" />
             </label> : <fieldset className="mt-4"><legend className="mb-2 text-xs font-semibold text-white/60">{question.type === "TRUE_FALSE" ? "Correct answer" : "Answer choices · select every correct answer"}</legend><div className="grid gap-2 sm:grid-cols-2">
               {question.options.map((option, optionIndex) => <label key={`${question.id}-${optionIndex}`} className="flex min-h-11 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3">
                 <input type={question.type === "TRUE_FALSE" ? "radio" : "checkbox"} name={`correct-${question.id}`} checked={question.correctOptions.includes(optionIndex)} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, correctOptions: question.type === "TRUE_FALSE" ? [optionIndex] : event.target.checked ? [...item.correctOptions, optionIndex] : item.correctOptions.filter((index) => index !== optionIndex) }))} />
                 {question.type === "MULTIPLE_CHOICE" ? <input className="min-w-0 flex-1 bg-transparent py-2 text-xs text-white outline-none placeholder:text-white/25" maxLength={120} value={option} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, options: item.options.map((value, index) => index === optionIndex ? event.target.value : value) }))} placeholder={`Choice ${optionIndex + 1}`} /> : <span className="text-xs text-white/75">{option}</span>}
               </label>)}
             </div></fieldset>}
+            <label className="mt-6 flex w-full flex-col gap-2 border-t border-white/[0.08] pt-5 text-xs font-semibold text-white/60">Answer Explanation (Optional) <span className="text-[10px] font-normal text-white/35">Show this fact or explanation to players when the answer is revealed.</span>
+              <textarea className={`${builderFieldClass} h-auto min-h-24 resize-y`} maxLength={1000} value={question.explanation ?? ""} onChange={(event) => updateQuestion(question.id, (item) => ({ ...item, explanation: event.target.value }))} placeholder="Explain why this answer is correct" />
+            </label>
           </article>)}
           <button type="button" onClick={() => updateRound(activeRound.id, (round) => ({ ...round, questions: [...round.questions, createQuestion()] }))} className={`${secondaryButtonClass} w-full`}><Plus className="size-4" /> Add question</button>
         </div>

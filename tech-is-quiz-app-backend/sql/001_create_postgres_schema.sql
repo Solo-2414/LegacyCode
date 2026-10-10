@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TYPE user_role AS ENUM ('ADMIN', 'PARTICIPANT');
+CREATE TYPE user_role AS ENUM ('SUPERADMIN', 'ADMIN', 'PARTICIPANT');
 CREATE TYPE question_type AS ENUM ('MULTIPLE_CHOICE', 'TRUE_FALSE', 'IDENTIFICATION');
 CREATE TYPE room_status AS ENUM ('LOBBY', 'IN_PROGRESS', 'COMPLETED');
 
@@ -38,6 +38,7 @@ CREATE TABLE questions (
   round_id UUID NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
   type question_type NOT NULL,
   question_text TEXT NOT NULL,
+  explanation TEXT,
   options JSONB NOT NULL DEFAULT '[]'::jsonb,
   correct_answer JSONB NOT NULL,
   accepted_answers JSONB NOT NULL DEFAULT '[]'::jsonb,

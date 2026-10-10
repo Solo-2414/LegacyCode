@@ -5,6 +5,7 @@ type QuizQuestion = {
   id: string
   type: "MULTIPLE_CHOICE" | "TRUE_FALSE" | "IDENTIFICATION"
   questionText: string
+  explanation?: string
   options: string[]
   correctOptions: number[]
   acceptedAnswers: string[]
@@ -25,6 +26,7 @@ type QuizRow = {
   question_id: string
   question_type: QuizQuestion["type"]
   question_text: string
+  explanation: string | null
   options: unknown
   correct_answer: unknown
   accepted_answers: unknown
@@ -38,6 +40,16 @@ function asStringArray(value: unknown) {
 
 function asNumberArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number") : []
+}
+
+function asCorrectOptions(value: unknown, options: string[]) {
+  const indexes = asNumberArray(value)
+  if (indexes.length > 0) return indexes
+  const scalar = typeof value === "boolean" ? String(value) : typeof value === "string" ? value : ""
+  const normalized = scalar.trim().toLocaleLowerCase()
+  if (!normalized) return []
+  const index = options.findIndex((option) => option.trim().toLocaleLowerCase() === normalized)
+  return index >= 0 ? [index] : []
 }
 
 function isUuid(value: unknown): value is string {
@@ -64,7 +76,7 @@ export async function loadQuizzes(): Promise<Quiz[]> {
   const result = await query<QuizRow>(`
     SELECT q.id AS quiz_id, q.title AS quiz_title, q.description AS quiz_description, q.updated_at AS quiz_updated_at,
            r.id AS round_id, r.round_number, r.title AS round_title,
-           question.id AS question_id, question.type AS question_type, question.question_text,
+           question.id AS question_id, question.type AS question_type, question.question_text, question.explanation,
            question.options, question.correct_answer, question.accepted_answers,
            question.points, question.time_limit_sec
     FROM quizzes q
@@ -92,8 +104,9 @@ export async function loadQuizzes(): Promise<Quiz[]> {
         id: row.question_id,
         type: row.question_type,
         questionText: row.question_text,
+        explanation: row.explanation ?? undefined,
         options: asStringArray(row.options),
-        correctOptions: asNumberArray(row.correct_answer),
+        correctOptions: asCorrectOptions(row.correct_answer, asStringArray(row.options)),
         acceptedAnswers: asStringArray(row.accepted_answers),
         points: row.points,
         timeLimitSec: row.time_limit_sec,
@@ -109,15 +122,16 @@ export async function saveQuiz(input: Quiz, hostId: string): Promise<Quiz> {
   if (host.rowCount !== 1) throw new Error("The quiz host account could not be found.")
   const quiz = normalizeQuiz(input)
   await withTransaction(async (client) => {
-    await client.query("DELETE FROM quizzes WHERE id = $1", [quiz.id])
-    await client.query("INSERT INTO quizzes (id, host_id, title, description, updated_at) VALUES ($1, $2, $3, $4, $5)", [quiz.id, hostId, quiz.title.trim(), quiz.description ?? "", quiz.updatedAt])
+    const updated = await client.query("UPDATE quizzes SET title = $2, description = $3, updated_at = $4 WHERE id = $1", [quiz.id, quiz.title.trim(), quiz.description ?? "", quiz.updatedAt])
+    if (!updated.rowCount) await client.query("INSERT INTO quizzes (id, host_id, title, description, updated_at) VALUES ($1, $2, $3, $4, $5)", [quiz.id, hostId, quiz.title.trim(), quiz.description ?? "", quiz.updatedAt])
+    await client.query("DELETE FROM rounds WHERE quiz_id = $1", [quiz.id])
     for (const [roundIndex, round] of quiz.rounds.entries()) {
       const roundId = round.id || randomUUID()
       await client.query("INSERT INTO rounds (id, quiz_id, round_number, title) VALUES ($1, $2, $3, $4)", [roundId, quiz.id, roundIndex + 1, round.title])
       for (const question of round.questions) {
         await client.query(
-          "INSERT INTO questions (id, round_id, type, question_text, options, correct_answer, accepted_answers, points, time_limit_sec) VALUES ($1, $2, $3::question_type, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)",
-          [question.id || randomUUID(), roundId, question.type, question.questionText, JSON.stringify(question.options), JSON.stringify(question.correctOptions), JSON.stringify(question.acceptedAnswers), question.points, question.timeLimitSec],
+          "INSERT INTO questions (id, round_id, type, question_text, explanation, options, correct_answer, accepted_answers, points, time_limit_sec) VALUES ($1, $2, $3::question_type, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)",
+          [question.id || randomUUID(), roundId, question.type, question.questionText, question.explanation?.trim() || null, JSON.stringify(question.options), JSON.stringify(question.correctOptions), JSON.stringify(question.acceptedAnswers), question.points, question.timeLimitSec],
         )
       }
     }

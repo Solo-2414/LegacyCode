@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, Clock3, Copy, Crown, Radio, UsersRound, X } from "lucide-react"
 import { PageHeading, QuizShell, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
+import { AudioToggle, useGameAudio } from "@/components/game-audio-provider"
 import type { RoomState } from "@/lib/game-types"
 
 export function HostRoomPage({ code }: { code: string }) {
@@ -12,6 +13,9 @@ export function HostRoomPage({ code }: { code: string }) {
   const [error, setError] = useState("")
   const [seconds, setSeconds] = useState(0)
   const [copied, setCopied] = useState(false)
+  const previousPlayerCount = useRef(0)
+  const previousSeconds = useRef<number | null>(null)
+  const { startLobbyMusic, stopLobbyMusic, playSound } = useGameAudio()
 
   useEffect(() => {
     const hostKey = window.sessionStorage.getItem(`techis-host:${code}`)
@@ -44,6 +48,23 @@ export function HostRoomPage({ code }: { code: string }) {
     const timer = window.setInterval(tick, 250)
     return () => window.clearInterval(timer)
   }, [room?.endsAt])
+
+  useEffect(() => {
+    if (room?.phase === "LOBBY") startLobbyMusic()
+    else stopLobbyMusic()
+    return () => stopLobbyMusic()
+  }, [room?.phase, startLobbyMusic, stopLobbyMusic])
+
+  useEffect(() => {
+    if (!room) return
+    if (room.players.length > previousPlayerCount.current && previousPlayerCount.current > 0) playSound("chime")
+    previousPlayerCount.current = room.players.length
+  }, [playSound, room])
+
+  useEffect(() => {
+    if (room?.phase === "QUESTION" && seconds <= 5 && seconds > 0 && previousSeconds.current !== seconds) playSound("tick")
+    previousSeconds.current = room?.phase === "QUESTION" ? seconds : null
+  }, [playSound, room?.phase, seconds])
 
   function control(event: "room:start" | "room:reveal" | "room:leaderboard" | "room:next") {
     getRealtimeSocket().emit(event, { code })

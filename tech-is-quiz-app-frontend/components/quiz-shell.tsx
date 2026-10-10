@@ -15,15 +15,15 @@ export function QuizShell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="flex flex-col leading-none">
               <span className="text-[17px] font-bold tracking-[-0.045em] sm:text-lg">TechIs</span>
-              <span className="mt-1.5 text-[10px] font-semibold tracking-[0.2em] text-white/40 uppercase">QuizApp</span>
+              <span className="mt-1.5 text-[10px] font-semibold tracking-[0.2em] text-white/40 uppercase">LegacyCode</span>
             </span>
           </Link>
           <AuthenticatedNav />
         </header>
         {children}
         <footer className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/[0.07] pt-5 text-[11px] text-white/35 sm:flex-row sm:pt-6">
-          <span>TechIs QuizApp <span className="mx-1.5 text-white/15">/</span> Make every answer count.</span>
-          <Link href="/" className="group inline-flex items-center gap-1.5 transition hover:text-white/65">A smarter kind of play <ArrowUpRight className="size-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></Link>
+          <span>TechIs QuizApp <span className="mx-1.5 text-white/15">/</span> Tech Department</span>
+          <Link href="/" className="group inline-flex items-center gap-1.5 transition hover:text-white/65">{"\u00A9"} 2026 TECHIS <ArrowUpRight className="size-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></Link>
         </footer>
       </div>
     </main>
@@ -46,5 +46,5 @@ export function PageHeading({ id, eyebrow, title, description }: { id?: string; 
 
 export const surfaceClass = "rounded-[26px] border border-white/[0.09] bg-[#141b25]/75 shadow-[0_24px_80px_rgba(0,0,0,.26)] backdrop-blur-xl"
 export const fieldClass = "h-[52px] w-full rounded-xl border border-white/[0.11] bg-white/[0.035] px-4 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#10d7ac]/55 focus:ring-2 focus:ring-[#10d7ac]/15"
-export const primaryButtonClass = "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#10d7ac] px-5 text-sm font-bold text-[#08251f] shadow-[0_8px_30px_rgba(16,215,172,.19)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#37e5bd] hover:shadow-[0_12px_40px_rgba(16,215,172,.32)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45" 
-export const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.045] px-4 text-sm font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white" 
+export const primaryButtonClass = "inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#10d7ac] px-5 py-3 text-sm font-bold text-[#08251f] shadow-[0_8px_30px_rgba(16,215,172,.19)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#37e5bd] hover:shadow-[0_12px_40px_rgba(16,215,172,.32)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45"
+export const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.045] px-4 text-sm font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
