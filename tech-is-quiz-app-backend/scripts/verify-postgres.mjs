@@ -1,7 +1,8 @@
 import "dotenv/config"
 import pg from "pg"
+import { sslFor } from "./db-ssl.mjs"
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? sslFor(process.env.DATABASE_URL) : undefined })
 try {
   const result = await pool.query(`
     SELECT

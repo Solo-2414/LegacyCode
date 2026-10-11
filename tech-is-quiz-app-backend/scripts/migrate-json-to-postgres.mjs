@@ -4,11 +4,12 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import pg from "pg"
+import { sslFor } from "./db-ssl.mjs"
 
 const { Pool } = pg
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
 const data = path.join(root, "data")
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? sslFor(process.env.DATABASE_URL) : undefined })
 const isUuid = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
 const users = JSON.parse(await readFile(path.join(data, "users.json"), "utf8"))

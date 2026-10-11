@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { API_URL } from "@/lib/quiz-api"
-import { sessionCookieName, sessionMaxAgeSeconds, type UserSession } from "@/lib/auth-session"
+import { sessionCookieDomain, sessionCookieName, sessionMaxAgeSeconds, type UserSession } from "@/lib/auth-session"
 
 export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin) {
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
+    domain: sessionCookieDomain,
     maxAge: sessionMaxAgeSeconds,
   })
   return response

@@ -7,10 +7,12 @@ if (!databaseUrl) {
 }
 
 const databaseHost = new URL(databaseUrl).hostname
+// Supabase (direct *.supabase.co and pooler *.supabase.com) needs SSL. Override with DATABASE_SSL=true|false.
+const useSsl = process.env.DATABASE_SSL === "true" || (process.env.DATABASE_SSL !== "false" && (databaseHost.endsWith(".supabase.co") || databaseHost.endsWith(".supabase.com")))
 
 export const pool = new Pool({
   connectionString: databaseUrl,
-  ssl: databaseHost.endsWith(".supabase.co") ? { rejectUnauthorized: false } : undefined,
+  ssl: useSsl ? { rejectUnauthorized: false } : undefined,
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

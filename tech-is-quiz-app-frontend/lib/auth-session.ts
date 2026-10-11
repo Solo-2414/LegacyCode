@@ -2,6 +2,9 @@ import { jwtVerify } from "jose"
 
 export const sessionCookieName = "techis_session"
 export const sessionMaxAgeSeconds = 8 * 60 * 60
+// In production the frontend (app.example.com) and API (api.example.com) are different origins, so the
+// session cookie must be shared across subdomains. Set COOKIE_DOMAIN=.example.com there. Leave unset locally.
+export const sessionCookieDomain = process.env.COOKIE_DOMAIN || undefined
 export type UserRole = "SUPERADMIN" | "ADMIN" | "PARTICIPANT"
 export type UserSession = { userId: string; name: string; role: UserRole }
 

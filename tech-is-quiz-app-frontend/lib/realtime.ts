@@ -1,5 +1,6 @@
 import { io, type Socket } from "socket.io-client"
 import { API_URL } from "@/lib/quiz-api"
+import { getApiToken } from "@/lib/api-token"
 import type { RoomState, RoomSummary } from "@/lib/game-types"
 
 type ServerEvents = {
@@ -25,6 +26,17 @@ type ClientEvents = {
 let socket: Socket<ServerEvents, ClientEvents> | undefined
 
 export function getRealtimeSocket() {
-  socket ??= io(API_URL, { autoConnect: false, reconnection: true, withCredentials: true })
+  socket ??= io(API_URL, {
+    autoConnect: false,
+    reconnection: true,
+    withCredentials: true,
+    // sent on every (re)connect so the API knows who is connecting, even on a different domain
+    auth: (callback) => { getApiToken().then((token) => callback({ token })).catch(() => callback({})) },
+  })
   return socket
+}
+/** Drop the shared socket (used on sign-out so the next user connects with their own token). */
+export function resetRealtimeSocket() {
+  socket?.disconnect()
+  socket = undefined
 }

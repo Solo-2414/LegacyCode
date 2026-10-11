@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { LogOut } from "lucide-react"
 import Link from "next/link"
 import type { UserSession } from "@/lib/auth-session"
+import { clearApiToken } from "@/lib/api-token"
+import { resetRealtimeSocket } from "@/lib/realtime"
 
 export function AuthenticatedNav() {
   const router = useRouter()
@@ -19,6 +21,8 @@ export function AuthenticatedNav() {
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" })
+    clearApiToken()
+    resetRealtimeSocket()
     router.replace("/")
     router.refresh()
   }

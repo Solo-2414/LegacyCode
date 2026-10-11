@@ -26,6 +26,9 @@ importers:
       socket.io:
         specifier: ^4.8.1
         version: 4.8.4
+      tsx:
+        specifier: ^4.20.3
+        version: 4.23.15
     devDependencies:
       '@types/cors':
         specifier: ^2.8.17
@@ -39,9 +42,6 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
-      tsx:
-        specifier: ^4.20.3
-        version: 4.23.15
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

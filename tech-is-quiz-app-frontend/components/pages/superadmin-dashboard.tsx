@@ -6,7 +6,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { Activity, BarChart3, Check, Crown, Database, HeartPulse, Pencil, Plus, Shield, Trash2, Users, X } from "lucide-react"
 import { PageHeading, QuizShell, fieldClass, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { QuizBuilder, type SavedQuiz } from "@/components/pages/quiz-builder"
-import { API_URL } from "@/lib/quiz-api"
+import { apiFetch } from "@/lib/quiz-api"
 import type { UserSession } from "@/lib/auth-session"
 
 type DashboardData = {
@@ -20,7 +20,7 @@ type DashboardData = {
 type Tab = "overview" | "users" | "quizzes" | "rooms"
 
 async function apiRequest<T>(path: string, options?: RequestInit) {
-  const response = await fetch(`${API_URL}${path}`, { ...options, credentials: "include", headers: { "Content-Type": "application/json", ...options?.headers }, cache: "no-store" })
+  const response = await apiFetch(path, options)
   if (!response.ok) {
     const result = await response.json().catch(() => ({})) as { error?: string }
     throw new Error(result.error ?? `Request failed (${response.status}).`)

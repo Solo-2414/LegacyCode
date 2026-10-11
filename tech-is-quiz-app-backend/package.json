@@ -20,14 +20,14 @@
     "express": "^5.1.0",
     "jose": "^6.2.12",
     "pg": "^8.23.1",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "tsx": "^4.20.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.23.1",
-    "tsx": "^4.20.3",
     "typescript": "^5.7.3"
   }
 }

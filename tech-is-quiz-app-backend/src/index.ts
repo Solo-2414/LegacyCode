@@ -61,6 +61,8 @@ type Room = {
   type ClientSocket = Socket & { data: { role?: "host" | "player"; appRole?: UserRole; userId?: string; roomCode?: string; playerId?: string } }
 
 const app = express()
+// Behind a hosting proxy (Railway/Render/etc.), trust the first hop so request.ip is the real client.
+app.set("trust proxy", 1)
 const server = createServer(app)
 const frontendOrigin = process.env.FRONTEND_URL ?? "http://localhost:3000"
 const allowedOrigins = [frontendOrigin, "http://127.0.0.1:3000"]
@@ -81,8 +83,14 @@ function tokenFromCookie(cookieHeader: string | undefined) {
   }
 }
 
+function tokenFromAuthorization(header: string | undefined) {
+  const match = header?.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() ?? ""
+}
+
 async function requireRole(request: Request, response: Response, role: UserRole) {
-  const session = await verifySessionToken(tokenFromCookie(request.headers.cookie))
+  // The browser sends the session token as a Bearer header (works across different domains); the cookie is still accepted.
+  const session = await verifySessionToken(tokenFromAuthorization(request.headers.authorization) || tokenFromCookie(request.headers.cookie))
   if (!session) {
     response.status(401).json({ error: "Authentication required." })
     return null
@@ -101,6 +109,7 @@ async function requireSuperAdmin(request: Request, response: Response) {
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
 const maxLoginAttempts = 5
 const loginWindowMs = 15 * 60 * 1000
+const loginFloodLimiter = new RateLimiter(600, 60_000)
 
 app.post("/auth/login", async (request, response) => {
   const origin = request.headers.origin
@@ -108,13 +117,19 @@ app.post("/auth/login", async (request, response) => {
     response.status(403).json({ error: "Origin is not allowed." })
     return
   }
-  const address = request.ip ?? "unknown"
+  const email = typeof request.body?.email === "string" ? request.body.email : ""
+  // Sign-in requests arrive from the frontend server, so every user shares one IP.
+  // Limit failed attempts per account (email) instead, plus a generous overall flood guard.
+  const address = `email:${email.trim().toLocaleLowerCase()}`
+  if (!loginFloodLimiter.hit("all")) {
+    response.status(429).json({ error: "Too many sign-in attempts right now. Try again in a few minutes." })
+    return
+  }
   const attempt = loginAttempts.get(address)
   if (attempt && attempt.resetAt > Date.now() && attempt.count >= maxLoginAttempts) {
     response.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." })
     return
   }
-  const email = typeof request.body?.email === "string" ? request.body.email : ""
   const password = typeof request.body?.password === "string" ? request.body.password : ""
   const user = await authenticateUser(email, password)
   if (!user) {
@@ -293,7 +308,15 @@ function isHost(socket: ClientSocket, room: Room) {
   return socket.data.role === "host" && socket.data.roomCode === room.code
 }
 
-app.get("/health", (_request, response) => response.json({ status: "ok" }))
+// Health check. It also touches the database so an uptime monitor pinging this keeps a free Supabase project from pausing.
+app.get("/health", async (_request, response) => {
+  try {
+    await query("SELECT 1")
+    response.json({ status: "ok", database: "ok" })
+  } catch {
+    response.status(503).json({ status: "degraded", database: "unreachable" })
+  }
+})
 app.get("/api/quizzes", async (request, response) => {
   if (!await requireRole(request, response, "ADMIN")) return
   response.json(quizzes)
@@ -473,7 +496,7 @@ app.get("/api/rooms/:code", async (request, response) => {
 
 io.use((rawSocket, next) => {
   const socket = rawSocket as ClientSocket
-  void verifySessionToken(tokenFromCookie(socket.handshake.headers.cookie)).then((session) => {
+  void verifySessionToken((typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : "") || tokenFromCookie(socket.handshake.headers.cookie)).then((session) => {
     if (!session) {
       next(new Error("Authentication required."))
       return

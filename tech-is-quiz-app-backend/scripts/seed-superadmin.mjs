@@ -2,6 +2,7 @@ import "dotenv/config"
 import { randomBytes, randomUUID, scrypt as nodeScrypt } from "node:crypto"
 import { promisify } from "node:util"
 import pg from "pg"
+import { sslFor } from "./db-ssl.mjs"
 
 const { Pool } = pg
 const scrypt = promisify(nodeScrypt)
@@ -12,7 +13,7 @@ if (!email || !password || password.length < 12) throw new Error("Set SUPERADMIN
 
 const salt = randomBytes(16).toString("base64url")
 const passwordHash = (await scrypt(password, salt, 64)).toString("base64url")
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? sslFor(process.env.DATABASE_URL) : undefined })
 try {
   const result = await pool.query(
     `INSERT INTO users (id, email, name, role, password_salt, password_hash)

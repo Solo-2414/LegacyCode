@@ -1,5 +1,7 @@
 "use client"
 
+import { clearApiToken } from "@/lib/api-token"
+import { resetRealtimeSocket } from "@/lib/realtime"
 import { useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowRight, KeyRound, LockKeyhole, Mail } from "lucide-react"
@@ -28,6 +30,8 @@ export function LandingPage() {
         setError(result.error ?? "Email or password is incorrect.")
         return
       }
+      clearApiToken()
+      resetRealtimeSocket()
       router.replace(result.session.role === "SUPERADMIN" ? "/superadmin" : result.session.role === "ADMIN" ? "/admin/dashboard" : "/join")
       router.refresh()
     } catch {

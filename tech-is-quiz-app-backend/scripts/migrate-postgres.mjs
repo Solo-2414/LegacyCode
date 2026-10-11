@@ -3,13 +3,14 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import "dotenv/config"
 import pg from "pg"
+import { sslFor } from "./db-ssl.mjs"
 
 const { Pool } = pg
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) throw new Error("DATABASE_URL is required before running migrations.")
 const pool = new Pool({
   connectionString: databaseUrl,
-  ssl: new URL(databaseUrl).hostname.endsWith(".supabase.co") ? { rejectUnauthorized: false } : undefined,
+  ssl: sslFor(databaseUrl),
 })
 
 const scriptDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)))
