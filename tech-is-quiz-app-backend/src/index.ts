@@ -5,7 +5,8 @@ import { createServer } from "node:http"
 import { randomInt, randomUUID } from "node:crypto"
 import { Server, type Socket } from "socket.io"
 import { authenticateUser, createSessionToken, createUser, loadUsers, validateAuthConfiguration, verifySessionToken, type SessionUser, type UserRole } from "./auth.js"
-import { applyAnswer } from "./game.js"
+import { applyAnswer, computeTeamStandings, everyoneConnectedAnswered } from "./game.js"
+import { RateLimiter } from "./rate-limit.js"
 import { query } from "./database.js"
 import { loadQuizzes, saveQuiz, type Quiz } from "./quiz-store.js"
 import { normalizeNickname, validateNickname, validateTeamName, validateTeamNameInput } from "./room-validation.js"
@@ -53,6 +54,8 @@ type Room = {
   startedAt: number | null
   endsAt: number | null
   timer: ReturnType<typeof setTimeout> | null
+  earlyRevealTimer?: ReturnType<typeof setTimeout> | null
+  kickedUserIds?: Set<string>
   hostSocketId?: string
 }
   type ClientSocket = Socket & { data: { role?: "host" | "player"; appRole?: UserRole; userId?: string; roomCode?: string; playerId?: string } }
@@ -158,6 +161,7 @@ function roomState(room: Room) {
       ...(reveal && question.explanation ? { explanation: question.explanation } : {}),
     } : null,
     teams: [...teamSizes].map(([name, playerCount]) => ({ name, playerCount })).sort((first, second) => first.name.localeCompare(second.name)),
+    teamStandings: computeTeamStandings([...room.players.values()]),
     endsAt: room.phase === "QUESTION" ? room.endsAt : null,
     players: [...room.players.values()].map((player) => ({
       id: player.id,
@@ -185,6 +189,8 @@ function broadcastRoom(room: Room) {
 function setPhase(room: Room, phase: GamePhase) {
   if (room.timer) clearTimeout(room.timer)
   room.timer = null
+  if (room.earlyRevealTimer) clearTimeout(room.earlyRevealTimer)
+  room.earlyRevealTimer = null
   room.endsAt = null
   room.phase = phase
   if (phase === "QUESTION") {
@@ -209,11 +215,31 @@ function setPhase(room: Room, phase: GamePhase) {
 function finishRoom(room: Room) {
   if (room.timer) clearTimeout(room.timer)
   room.timer = null
+  if (room.earlyRevealTimer) clearTimeout(room.earlyRevealTimer)
+  room.earlyRevealTimer = null
   room.endsAt = null
   room.phase = "COMPLETED"
   void updatePersistedRoom(room).catch((error) => console.error("Could not persist completed room:", error))
   broadcastRoom(room)
 }
+
+const earlyRevealDelayMs = 1500
+
+/** Once every connected player has answered, move to the reveal after a short beat instead of waiting for the timer. */
+function revealEarlyIfEveryoneAnswered(room: Room) {
+  if (room.phase !== "QUESTION" || room.earlyRevealTimer) return
+  if (!everyoneConnectedAnswered([...room.players.values()])) return
+  room.earlyRevealTimer = setTimeout(() => {
+    room.earlyRevealTimer = null
+    if (room.phase === "QUESTION") setPhase(room, "REVEAL")
+  }, earlyRevealDelayMs)
+}
+
+// Rate limits (per signed-in user, in memory)
+const joinLimiter = new RateLimiter(20, 60_000)
+const roomLookupMissLimiter = new RateLimiter(10, 5 * 60_000)
+const submitLimiter = new RateLimiter(30, 10_000)
+setInterval(() => { joinLimiter.sweep(); roomLookupMissLimiter.sweep(); submitLimiter.sweep() }, 60_000).unref()
 
 function findRoom(code: unknown): Room | undefined {
   return typeof code === "string" ? rooms.get(code) : undefined
@@ -430,9 +456,15 @@ app.post("/api/rooms", async (request, response) => {
   response.status(201).json({ code, hostKey: room.hostKey })
 })
 app.get("/api/rooms/:code", async (request, response) => {
-  if (!await requireRole(request, response, "PARTICIPANT")) return
+  const session = await requireRole(request, response, "PARTICIPANT")
+  if (!session) return
+  if (roomLookupMissLimiter.isBlocked(session.userId)) {
+    response.status(429).json({ error: "Too many wrong room codes. Wait a few minutes and try again." })
+    return
+  }
   const room = findRoom(request.params.code)
   if (!room) {
+    roomLookupMissLimiter.hit(session.userId)
     response.status(404).json({ error: "Room not found." })
     return
   }
@@ -457,16 +489,26 @@ io.on("connection", (rawSocket) => {
 
   socket.on("room:watch", (payload: { code?: string }, acknowledge?: (result: { ok: boolean; error?: string }) => void) => {
     if (socket.data.appRole !== "PARTICIPANT") return acknowledge?.({ ok: false, error: "Participant account required." })
+    if (roomLookupMissLimiter.isBlocked(socket.data.userId ?? socket.id)) return acknowledge?.({ ok: false, error: "Too many wrong room codes. Wait a few minutes and try again." })
     const room = findRoom(payload?.code)
-    if (!room) return acknowledge?.({ ok: false, error: "Room not found." })
+    if (!room) {
+      roomLookupMissLimiter.hit(socket.data.userId ?? socket.id)
+      return acknowledge?.({ ok: false, error: "Room not found." })
+    }
     void socket.join(room.code)
     acknowledge?.({ ok: true })
     socket.emit("room:state", roomState(room))
   })
 
   socket.on("room:join", async (payload: { code?: string; role?: string; hostKey?: string; participantId?: string; playerId?: string; nickname?: string; teamName?: string }, acknowledge?: (result: { ok: boolean; error?: string; participantId?: string; teamId?: string }) => void) => {
+    const limiterKey = socket.data.userId ?? socket.id
+    if (!joinLimiter.hit(limiterKey)) return acknowledge?.({ ok: false, error: "Too many join attempts. Wait a minute and try again." })
+    if (roomLookupMissLimiter.isBlocked(limiterKey)) return acknowledge?.({ ok: false, error: "Too many wrong room codes. Wait a few minutes and try again." })
     const room = findRoom(payload?.code)
-    if (!room) return acknowledge?.({ ok: false, error: "Room not found. Check the six-digit code." })
+    if (!room) {
+      roomLookupMissLimiter.hit(limiterKey)
+      return acknowledge?.({ ok: false, error: "Room not found. Check the six-digit code." })
+    }
     if (payload.role === "host") {
       if (socket.data.appRole !== "ADMIN") return acknowledge?.({ ok: false, error: "Admin account required." })
       if (payload.hostKey !== room.hostKey) return acknowledge?.({ ok: false, error: "Host access is invalid. Reopen this room from the dashboard." })
@@ -478,6 +520,7 @@ io.on("connection", (rawSocket) => {
       if (room.phase === "COMPLETED") return acknowledge?.({ ok: false, error: "This quiz has already ended." })
       const playerId = socket.data.userId
       if (!playerId) return acknowledge?.({ ok: false, error: "Session user is missing." })
+      if (room.kickedUserIds?.has(playerId)) return acknowledge?.({ ok: false, error: "The host removed you from this room." })
       const persisted = payload.participantId ? await findPersistedParticipant(payload.participantId, room, playerId) : undefined
       if (payload.participantId && !persisted) return acknowledge?.({ ok: false, error: "That participant session is no longer valid. Join the room again." })
       const existing = room.players.get(playerId)
@@ -561,7 +604,29 @@ io.on("connection", (rawSocket) => {
     }
     finishRoom(room)
   })
+  socket.on("room:kick", (payload: { code?: string; playerId?: string }, acknowledge?: (result: { ok: boolean; error?: string }) => void) => {
+    const room = findRoom(payload?.code)
+    if (!room || !isHost(socket, room)) return acknowledge?.({ ok: false, error: "Only the host can remove players." })
+    const target = typeof payload.playerId === "string" ? room.players.get(payload.playerId) : undefined
+    if (!target) return acknowledge?.({ ok: false, error: "Player not found." })
+    room.players.delete(target.id)
+    ;(room.kickedUserIds ??= new Set()).add(target.id)
+    io.to(target.socketId).emit("room:kicked", { code: room.code })
+    io.sockets.sockets.get(target.socketId)?.leave(room.code)
+    if (target.participantId) {
+      const participantId = target.participantId
+      void (async () => {
+        await query("DELETE FROM participants WHERE id = $1", [participantId])
+        await query("DELETE FROM teams t WHERE t.room_id = $1 AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.team_id = t.id)", [room.id])
+        await query("UPDATE teams SET total_score = (SELECT COALESCE(SUM(score), 0) FROM participants WHERE team_id = teams.id) WHERE room_id = $1", [room.id])
+      })().catch((error) => console.error("Could not persist player removal:", error))
+    }
+    acknowledge?.({ ok: true })
+    broadcastRoom(room)
+    revealEarlyIfEveryoneAnswered(room)
+  })
   socket.on("room:submit", (payload: { code?: string; playerId?: string; participantId?: string; teamId?: string; answer?: unknown }, acknowledge?: (result: { ok: boolean; error?: string; isCorrect?: boolean; isPartial?: boolean; pointsAwarded?: number }) => void) => {
+    if (!submitLimiter.hit(socket.data.userId ?? socket.id)) return acknowledge?.({ ok: false, error: "You are sending answers too quickly." })
     const room = findRoom(payload?.code)
     const player = room?.players.get(socket.data.playerId ?? "")
     const question = room ? currentQuestion(room) : undefined
@@ -576,6 +641,7 @@ io.on("connection", (rawSocket) => {
     void query("UPDATE teams SET total_score = (SELECT COALESCE(SUM(score), 0) FROM participants WHERE team_id = teams.id) WHERE id = (SELECT team_id FROM participants WHERE id = $1)", [player.participantId]).catch((error) => console.error("Could not persist team score:", error))
     void query("INSERT INTO submissions (team_id, question_id, participant_id, submitted_answer, is_correct, points_awarded) SELECT team_id, $2, id, $3::jsonb, $4, $5 FROM participants WHERE id = $1 ON CONFLICT (participant_id, question_id) DO UPDATE SET submitted_answer = EXCLUDED.submitted_answer, is_correct = EXCLUDED.is_correct, points_awarded = EXCLUDED.points_awarded", [player.participantId, question.id, JSON.stringify(payload.answer), result.isCorrect, result.pointsAwarded ?? 0]).catch((error) => console.error("Could not persist submission:", error))
     broadcastRoom(room)
+    revealEarlyIfEveryoneAnswered(room)
   })
 
   socket.on("disconnect", () => {
@@ -587,6 +653,7 @@ io.on("connection", (rawSocket) => {
       player.isConnected = false
       void query("UPDATE participants SET is_connected = FALSE WHERE id = $1", [player.participantId]).catch((error) => console.error("Could not persist disconnect:", error))
       broadcastRoom(room)
+      revealEarlyIfEveryoneAnswered(room)
     }
   })
 })

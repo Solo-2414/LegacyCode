@@ -8,6 +8,7 @@ type ServerEvents = {
   "room:updated": (room: RoomSummary) => void
   "room:team-changed": (update: { teamName: string; players: Array<{ id: string; nickname: string; teamName: string; isConnected: boolean }> }) => void
   "room:team-created": (team: { name: string; playerCount: number }) => void
+  "room:kicked": (payload: { code: string }) => void
 }
 
 type ClientEvents = {
@@ -17,7 +18,8 @@ type ClientEvents = {
   "room:reveal": (payload: { code: string }) => void
   "room:leaderboard": (payload: { code: string }) => void
   "room:next": (payload: { code: string }) => void
-  "room:submit": (payload: { code: string; playerId: string; participantId?: string; teamId?: string; answer: string | number[] }, acknowledge: (result: { ok: boolean; error?: string; isCorrect?: boolean; pointsAwarded?: number }) => void) => void
+  "room:kick": (payload: { code: string; playerId: string }, acknowledge?: (result: { ok: boolean; error?: string }) => void) => void
+  "room:submit": (payload: { code: string; playerId: string; participantId?: string; teamId?: string; answer: string | number[] }, acknowledge: (result: { ok: boolean; error?: string; isCorrect?: boolean; isPartial?: boolean; pointsAwarded?: number }) => void) => void
 }
 
 let socket: Socket<ServerEvents, ClientEvents> | undefined

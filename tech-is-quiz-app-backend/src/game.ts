@@ -107,3 +107,24 @@ function normalizeTrueFalseValue(value: unknown): string | undefined {
   if (normalized === "true" || normalized === "false") return normalized
   return undefined
 }
+
+export type TeamStanding = { name: string; score: number; playerCount: number; average: number }
+
+/** Team score is the sum of its players' scores (same as teams.total_score in the database). */
+export function computeTeamStandings(players: Array<{ teamName: string; score: number }>): TeamStanding[] {
+  const teams = new Map<string, { score: number; playerCount: number }>()
+  for (const player of players) {
+    const team = teams.get(player.teamName) ?? { score: 0, playerCount: 0 }
+    team.score += player.score
+    team.playerCount += 1
+    teams.set(player.teamName, team)
+  }
+  return [...teams].map(([name, team]) => ({ name, score: team.score, playerCount: team.playerCount, average: Math.round(team.score / team.playerCount) }))
+    .sort((first, second) => second.score - first.score || first.name.localeCompare(second.name))
+}
+
+/** True when at least one player is connected and every connected player has locked in an answer. */
+export function everyoneConnectedAnswered(players: Array<{ isConnected: boolean; answer?: unknown }>): boolean {
+  const connected = players.filter((player) => player.isConnected)
+  return connected.length > 0 && connected.every((player) => player.answer !== undefined)
+}

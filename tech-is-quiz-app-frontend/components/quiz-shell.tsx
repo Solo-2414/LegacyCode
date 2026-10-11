@@ -11,7 +11,7 @@ export function QuizShell({ children }: { children: React.ReactNode }) {
         <header className="mb-8 flex flex-col gap-4 border-b border-white/[0.07] pb-4 sm:mb-10 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
           <Link className="group flex w-fit items-center gap-3" href="/" aria-label="TechIs QuizApp home">
             <span className="size-10 overflow-hidden rounded-[14px] ring-1 ring-white/15 shadow-[0_5px_24px_rgba(0,0,0,.3)] sm:size-11">
-              <img src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-KHwywXUeXAt6gKRaUvSyojic08od8c.png" alt="TechIs colorful geometric logo" className="size-full object-cover" />
+              <img src="/logo.png" onError={(event) => { const image = event.currentTarget; if (!image.dataset.fallback) { image.dataset.fallback = "1"; image.src = "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-KHwywXUeXAt6gKRaUvSyojic08od8c.png" } }} alt="TechIs colorful geometric logo" className="size-full object-cover" />
             </span>
             <span className="flex flex-col leading-none">
               <span className="text-[17px] font-bold tracking-[-0.045em] sm:text-lg">TechIs</span>

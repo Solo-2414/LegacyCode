@@ -6,6 +6,7 @@ import { ArrowLeft, Crown, Trophy } from "lucide-react"
 import { QuizShell, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
 import { useGameAudio } from "@/components/game-audio-provider"
+import { TeamRows } from "@/components/team-standings"
 import type { RoomState, RoomPlayer } from "@/lib/game-types"
 
 export function LeaderboardPage({ code }: { code: string }) {
@@ -62,6 +63,10 @@ export function LeaderboardPage({ code }: { code: string }) {
               <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3"><h2 id="remaining-players-title" className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">Player standings</h2><span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">Score</span></div>
               <ol className="max-h-[300px] divide-y divide-white/[0.05] overflow-y-auto">{players.map((player, index) => <li key={player.id} className="flex items-center gap-3 px-4 py-3"><span className="w-5 text-center text-xs font-semibold text-white/35">{index + 1}</span><span className="min-w-0 flex-1 truncate text-xs font-medium text-white/80">{player.nickname}{!player.isConnected && <span className="ml-2 text-[10px] text-white/35">Disconnected</span>}</span><span className="text-xs font-semibold tabular-nums text-white/65">{player.score.toLocaleString()} pts</span></li>)}{players.length === 0 && <li className="px-4 py-8 text-center text-xs text-white/40">No players have joined yet.</li>}</ol>
             </section>
+            {(room.teamStandings?.length ?? 0) > 0 && <section className="relative mx-auto mt-5 max-w-[600px] overflow-hidden rounded-xl border border-white/[0.08] bg-black/15 px-4" aria-labelledby="team-standings-title">
+              <div className="flex items-center justify-between border-b border-white/[0.07] py-3"><h2 id="team-standings-title" className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">Team standings</h2><span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">Total score</span></div>
+              <TeamRows teams={room.teamStandings} />
+            </section>}
           </>}
           <div className="relative mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row"><Link href="/admin/dashboard" className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#10d7ac] px-4 text-xs font-bold text-[#08251f] transition hover:bg-[#37e5bd] sm:ml-auto">Back to dashboard <ArrowLeft className="size-3.5 rotate-180" /></Link></div>
         </div>

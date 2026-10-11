@@ -6,6 +6,8 @@ import { ArrowRight, Check, Clock3, Trophy, X } from "lucide-react"
 import { QuizShell, fieldClass, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
 import { useGameAudio } from "@/components/game-audio-provider"
+import { StandingsToggle, TeamRows, type StandingsView } from "@/components/team-standings"
+import { handleRemovedFromRoom } from "@/lib/kicked"
 import type { RoomState } from "@/lib/game-types"
 
 const answerTones = ["answer-mint", "answer-blue", "answer-pink", "answer-yellow"]
@@ -29,6 +31,7 @@ export function GameplayPage({ code }: { code: string }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
   const { playSound } = useGameAudio()
+  const [standingsView, setStandingsView] = useState<StandingsView>("players")
   const lastRevealKey = useRef("")
   const lastCompleteCode = useRef("")
 
@@ -68,12 +71,15 @@ export function GameplayPage({ code }: { code: string }) {
     }
     void fetch("/api/auth/session", { cache: "no-store" }).then((response) => response.json()).then((result: { session?: { userId: string } }) => setPlayerId(result.session?.userId ?? ""))
     const onState = (state: RoomState) => setRoom(state)
+    const onKicked = () => handleRemovedFromRoom(code)
     socket.on("connect", join)
+    socket.on("room:kicked", onKicked)
     socket.on("room:state", onState)
     if (socket.connected) join()
     else socket.connect()
     return () => {
       socket.off("connect", join)
+      socket.off("room:kicked", onKicked)
       socket.off("room:state", onState)
     }
   }, [code])
@@ -154,8 +160,8 @@ export function GameplayPage({ code }: { code: string }) {
       <section className="mx-auto max-w-[1000px]" aria-labelledby="game-page-title">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><div><p className="text-[10px] font-bold tracking-[0.17em] text-[#62e8cb] uppercase">Room {code} · {room?.quizTitle ?? "Live game"}</p><h1 id="game-page-title" className="mt-1 text-xl font-bold tracking-tight text-white">{room?.roundTitle ?? "Game room"}</h1></div><span className="rounded-full border border-white/[0.08] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">Live question</span></div>
         {!room ? <div className={`${surfaceClass} p-8 text-center text-sm text-white/45`}>{message || "Connecting to the game…"}</div> : room.phase === "LOBBY" ? <div className={`${surfaceClass} p-8 text-center`}><h2 className="text-xl font-bold text-white">Waiting for the host</h2><p className="mt-2 text-sm text-white/45">You are connected. The first question will appear here when the host starts.</p><Link href={`/room/${code}/join`} className={`${secondaryButtonClass} mt-5`}>Return to waiting room</Link></div> : room.phase === "COMPLETED" || room.phase === "LEADERBOARD" ? <div className={`${surfaceClass} p-6 sm:p-8`}>
-          <div className="mb-5 flex items-center gap-3"><span className="flex size-11 items-center justify-center rounded-xl border border-[#ffd169]/20 bg-[#ffd169]/[0.08] text-[#ffd169]"><Trophy className="size-5" /></span><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#ffd169]">{room.phase === "COMPLETED" ? "Final standings" : "Current standings"}</p><h2 className="mt-1 text-xl font-bold text-white">{room.phase === "COMPLETED" ? "Quiz complete" : "Leaderboard"}</h2></div></div>
-          <ol className="divide-y divide-white/[0.06]">{room.players.slice(0, 10).map((player, index) => <li key={player.id} className="flex items-center gap-3 py-3"><span className={`w-7 text-center text-sm font-bold ${index === 0 ? "text-[#ffd169]" : "text-white/40"}`}>{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm text-white/80">{player.nickname}{player.id === playerId ? <span className="ml-2 text-[10px] text-[#72edce]">You</span> : null}</span><span className="text-sm font-bold tabular-nums text-white">{player.score.toLocaleString()} <span className="text-[10px] text-white/35">pts</span></span></li>)}</ol>
+          <div className="mb-5 flex items-center gap-3"><span className="flex size-11 items-center justify-center rounded-xl border border-[#ffd169]/20 bg-[#ffd169]/[0.08] text-[#ffd169]"><Trophy className="size-5" /></span><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#ffd169]">{room.phase === "COMPLETED" ? "Final standings" : "Current standings"}</p><h2 className="mt-1 text-xl font-bold text-white">{room.phase === "COMPLETED" ? "Quiz complete" : "Leaderboard"}</h2></div><div className="ml-auto"><StandingsToggle view={standingsView} onChange={setStandingsView} /></div></div>
+          {standingsView === "teams" ? <TeamRows teams={room.teamStandings ?? []} myTeamName={currentPlayer?.teamName} /> : <ol className="divide-y divide-white/[0.06]">{room.players.slice(0, 10).map((player, index) => <li key={player.id} className="flex items-center gap-3 py-3"><span className={`w-7 text-center text-sm font-bold ${index === 0 ? "text-[#ffd169]" : "text-white/40"}`}>{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm text-white/80">{player.nickname}{player.id === playerId ? <span className="ml-2 text-[10px] text-[#72edce]">You</span> : null}</span><span className="text-sm font-bold tabular-nums text-white">{player.score.toLocaleString()} <span className="text-[10px] text-white/35">pts</span></span></li>)}</ol>}
           </div> : room.phase === "REVEAL" ? <div className={`${surfaceClass} p-5 sm:p-8`}>
           <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#62e8cb]">Answer revealed</p><h2 className="mt-2 text-2xl font-bold text-white">{question?.questionText}</h2>
           <div className={`mt-5 rounded-xl border px-4 py-4 text-sm font-semibold ${currentPlayer?.isCorrect ? "border-[#10d7ac]/30 bg-[#10d7ac]/[0.08] text-[#72edce]" : currentPlayer?.isPartial ? "border-[#ffd169]/30 bg-[#ffd169]/[0.08] text-[#ffdc8b]" : "border-[#fa718d]/25 bg-[#fa718d]/[0.07] text-[#ffa0b1]"}`}>{currentPlayer?.isCorrect ? `Correct · +${currentPlayer.pointsAwarded ?? 0} points` : currentPlayer?.isPartial ? `Partially correct · +${currentPlayer.pointsAwarded ?? 0} points` : "Not quite this time"}</div>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { applyAnswer, type AnswerablePlayer, type QuizQuestion } from "./game.js"
+import { applyAnswer, computeTeamStandings, everyoneConnectedAnswered, type AnswerablePlayer, type QuizQuestion } from "./game.js"
 
 const question: QuizQuestion = {
   id: "q1",
@@ -157,5 +157,38 @@ describe("applyAnswer", () => {
     assert.equal(result.ok, true)
     assert.equal(result.isCorrect, false)
     assert.equal(player.score, 0)
+  })
+})
+
+describe("computeTeamStandings", () => {
+  it("sums scores per team, ranks them, and averages per player", () => {
+    const standings = computeTeamStandings([
+      { teamName: "Blue", score: 300 },
+      { teamName: "Blue", score: 100 },
+      { teamName: "Red", score: 250 },
+      { teamName: "Green", score: 250 },
+    ])
+    assert.deepEqual(standings.map((team) => team.name), ["Blue", "Green", "Red"])
+    assert.deepEqual(standings[0], { name: "Blue", score: 400, playerCount: 2, average: 200 })
+  })
+
+  it("returns an empty list with no players", () => {
+    assert.deepEqual(computeTeamStandings([]), [])
+  })
+})
+
+describe("everyoneConnectedAnswered", () => {
+  it("is true only when all connected players answered", () => {
+    assert.equal(everyoneConnectedAnswered([{ isConnected: true, answer: [0] }, { isConnected: true, answer: [1] }]), true)
+    assert.equal(everyoneConnectedAnswered([{ isConnected: true, answer: [0] }, { isConnected: true }]), false)
+  })
+
+  it("ignores disconnected players", () => {
+    assert.equal(everyoneConnectedAnswered([{ isConnected: true, answer: [0] }, { isConnected: false }]), true)
+  })
+
+  it("is false when nobody is connected", () => {
+    assert.equal(everyoneConnectedAnswered([]), false)
+    assert.equal(everyoneConnectedAnswered([{ isConnected: false }]), false)
   })
 })

@@ -6,6 +6,7 @@ import { ArrowRight, Check, UsersRound } from "lucide-react"
 import { PageHeading, QuizShell, fieldClass, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRoom } from "@/lib/quiz-api"
 import { getRealtimeSocket } from "@/lib/realtime"
+import { handleRemovedFromRoom } from "@/lib/kicked"
 import type { RoomState } from "@/lib/game-types"
 
 type TeamChangedPayload = {
@@ -120,6 +121,8 @@ export function TeamJoinPage({ code }: { code: string }) {
         setError(result.error ?? "Your participant session expired. Join the room again.")
       })
     }
+    const onKicked = () => handleRemovedFromRoom(code)
+    socket.on("room:kicked", onKicked)
     socket.on("room:state", onState)
     socket.on("room:team-changed", onTeamChanged)
     socket.on("room:team-created", onTeamCreated)
@@ -127,6 +130,7 @@ export function TeamJoinPage({ code }: { code: string }) {
     if (!socket.connected) socket.connect()
     else reconnectParticipant()
     return () => {
+      socket.off("room:kicked", onKicked)
       socket.off("room:state", onState)
       socket.off("room:team-changed", onTeamChanged)
       socket.off("room:team-created", onTeamCreated)

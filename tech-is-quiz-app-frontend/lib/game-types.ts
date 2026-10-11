@@ -25,6 +25,8 @@ export type LiveQuestion = {
   acceptedAnswers?: string[]
 }
 
+export type TeamStanding = { name: string; score: number; playerCount: number; average: number }
+
 export type RoomState = {
   code: string
   quizTitle: string
@@ -39,6 +41,7 @@ export type RoomState = {
   isLastQuestion: boolean
   question: LiveQuestion | null
   teams: { name: string; playerCount: number }[]
+  teamStandings: TeamStanding[]
   endsAt: number | null
   players: RoomPlayer[]
 }
