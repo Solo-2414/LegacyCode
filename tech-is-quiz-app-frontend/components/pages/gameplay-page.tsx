@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, Clock3, Trophy, X } from "lucide-react"
 import { QuizShell, fieldClass, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
+import { useGameAudio } from "@/components/game-audio-provider"
 import type { RoomState } from "@/lib/game-types"
 
 const answerTones = ["answer-mint", "answer-blue", "answer-pink", "answer-yellow"]
@@ -27,6 +28,9 @@ export function GameplayPage({ code }: { code: string }) {
   const [hasSubmitted, setHasSubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
+  const { playSound } = useGameAudio()
+  const lastRevealKey = useRef("")
+  const lastCompleteCode = useRef("")
 
   useEffect(() => {
     const storedValue = window.localStorage.getItem(`techis-participant:${code}`)
@@ -90,6 +94,30 @@ export function GameplayPage({ code }: { code: string }) {
     return () => window.clearInterval(timer)
   }, [room?.endsAt])
 
+  // Reveal -> result sound -> points tally; final fanfare when the quiz completes
+  const myResult = room?.players.find((player) => player.id === playerId)
+  useEffect(() => {
+    if (!room) return
+    if (room.phase === "COMPLETED") {
+      if (lastCompleteCode.current !== room.code) { lastCompleteCode.current = room.code; playSound("podiumFanfare") }
+      return
+    }
+    if (room.phase !== "REVEAL" || !room.question) return
+    const key = `${room.code}:${room.question.id}`
+    if (lastRevealKey.current === key) return
+    lastRevealKey.current = key
+    const correct = myResult?.isCorrect === true
+    const partial = myResult?.isPartial === true
+    const earnedPoints = (myResult?.pointsAwarded ?? 0) > 0
+    const timers = [
+      window.setTimeout(() => playSound("reveal"), 0),
+      // partial credit skips the big "correct" ding and goes straight to the points tally
+      ...(partial ? [] : [window.setTimeout(() => playSound(correct ? "correct" : "wrong"), 450)]),
+      ...(earnedPoints ? [window.setTimeout(() => playSound("pointsTally"), partial ? 450 : 1100)] : []),
+    ]
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [room, myResult?.isCorrect, myResult?.isPartial, myResult?.pointsAwarded, playSound])
+
   function sendAnswer(answer: string | number[]) {
     if (!playerId || !participantSession) {
       setMessage("Join this room with a nickname before answering.")
@@ -110,6 +138,7 @@ export function GameplayPage({ code }: { code: string }) {
       }
       setHasSubmitted(true)
       setMessage("Answer locked in")
+      playSound("answerSelect")
     })
   }
 
@@ -129,15 +158,15 @@ export function GameplayPage({ code }: { code: string }) {
           <ol className="divide-y divide-white/[0.06]">{room.players.slice(0, 10).map((player, index) => <li key={player.id} className="flex items-center gap-3 py-3"><span className={`w-7 text-center text-sm font-bold ${index === 0 ? "text-[#ffd169]" : "text-white/40"}`}>{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm text-white/80">{player.nickname}{player.id === playerId ? <span className="ml-2 text-[10px] text-[#72edce]">You</span> : null}</span><span className="text-sm font-bold tabular-nums text-white">{player.score.toLocaleString()} <span className="text-[10px] text-white/35">pts</span></span></li>)}</ol>
           </div> : room.phase === "REVEAL" ? <div className={`${surfaceClass} p-5 sm:p-8`}>
           <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#62e8cb]">Answer revealed</p><h2 className="mt-2 text-2xl font-bold text-white">{question?.questionText}</h2>
-          <div className={`mt-5 rounded-xl border px-4 py-4 text-sm font-semibold ${currentPlayer?.isCorrect ? "border-[#10d7ac]/30 bg-[#10d7ac]/[0.08] text-[#72edce]" : "border-[#fa718d]/25 bg-[#fa718d]/[0.07] text-[#ffa0b1]"}`}>{currentPlayer?.isCorrect ? `Correct · +${currentPlayer.pointsAwarded ?? 0} points` : "Not quite this time"}</div>
+          <div className={`mt-5 rounded-xl border px-4 py-4 text-sm font-semibold ${currentPlayer?.isCorrect ? "border-[#10d7ac]/30 bg-[#10d7ac]/[0.08] text-[#72edce]" : currentPlayer?.isPartial ? "border-[#ffd169]/30 bg-[#ffd169]/[0.08] text-[#ffdc8b]" : "border-[#fa718d]/25 bg-[#fa718d]/[0.07] text-[#ffa0b1]"}`}>{currentPlayer?.isCorrect ? `Correct · +${currentPlayer.pointsAwarded ?? 0} points` : currentPlayer?.isPartial ? `Partially correct · +${currentPlayer.pointsAwarded ?? 0} points` : "Not quite this time"}</div>
           {question?.type === "IDENTIFICATION" ? <p className="mt-4 text-sm text-white/60">Accepted: {question.acceptedAnswers?.join(", ")}</p> : <div className="mt-4 grid gap-2 sm:grid-cols-2">{question?.options.map((option, index) => ({ option, index })).filter(({ option }) => option.trim()).map(({ option, index }) => { const isCorrect = question.correctOptions?.includes(index) ?? false; const isSelected = selectedAnswerIndexes.includes(index); return <div key={index} className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-sm ${isCorrect ? "border-[#10d7ac]/35 bg-[#10d7ac]/[0.08] text-[#72edce]" : isSelected ? "border-[#fa718d]/40 bg-[#fa718d]/[0.12] text-[#ffa0b1]" : "border-white/[0.07] text-white/45"}`}>{isCorrect ? <Check className="size-4 shrink-0" /> : isSelected ? <X className="size-4 shrink-0" /> : <span className="size-4 shrink-0" />}{option}{isSelected && !isCorrect && <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.08em]">Your answer</span>}</div>})}</div>}
           <p className="mt-5 text-xs text-white/40">Your score: {currentPlayer?.score.toLocaleString() ?? 0} points. Waiting for the host to continue.</p>
           {question?.explanation && <div className="mt-6 rounded-lg border-l-4 border-[#10d7ac] bg-[#141b25]/80 p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#72edce]">Explanation</p><p className="mt-2 text-sm leading-6 text-white/70">{question.explanation}</p></div>}
         </div> : question ? <div className={`${surfaceClass} p-5 sm:p-8`}>
           <div className="mb-6 flex items-center gap-3" aria-label={`Time remaining: ${seconds} seconds`}><Clock3 className="size-4 shrink-0 text-[#4cbce0]" /><div className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.07]"><div className="h-full rounded-full bg-gradient-to-r from-[#10d7ac] via-[#4cbce0] to-[#ffd169] transition-[width] duration-200" style={{ width: progress }} /></div><span className={`min-w-8 text-right text-xs font-semibold tabular-nums ${seconds <= 5 ? "text-[#ffa0b1]" : "text-white/60"}`}>{seconds}s</span></div>
           <div className="mb-7 text-center"><span className="mb-3 inline-flex rounded-full border border-[#4cbce0]/20 bg-[#4cbce0]/[0.08] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#88dbf4]">{question.type.replaceAll("_", " ")} · {question.points} pts</span><h2 className="mx-auto max-w-[720px] text-[25px] leading-[1.18] font-bold text-white sm:text-[36px]">{question.questionText}</h2></div>
-          {question.type === "IDENTIFICATION" ? <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 sm:flex-row"><input aria-label="Type your answer" className={`${fieldClass} min-w-0 flex-1`} value={identification} onChange={(event) => setIdentification(event.target.value)} placeholder="Type your answer" disabled={answerLocked || seconds === 0 || isSubmitting} /><button type="button" onClick={() => sendAnswer(identification.trim())} disabled={!identification.trim() || answerLocked || seconds === 0 || isSubmitting} className={`${primaryButtonClass} w-full px-6 py-3 sm:min-w-48 sm:w-auto`}>{answerButtonLabel}<ArrowRight className="size-4" /></button></div> : <div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className={`grid w-full gap-4 ${question.type === "TRUE_FALSE" ? "grid-cols-2" : "grid-cols-1 md:grid-cols-2"}`}>{question.options.map((option, index) => ({ option, index })).filter(({ option }) => option.trim()).map(({ option, index }) => <button key={index} type="button" aria-pressed={selected.includes(index)} disabled={answerLocked || seconds === 0 || isSubmitting} onClick={() => setSelected((current) => question.type === "TRUE_FALSE" ? [index] : current.includes(index) ? current.filter((choice) => choice !== index) : [...current, index])} className={`answer-card ${answerTones[index % answerTones.length]} flex min-h-[62px] items-center gap-3 rounded-lg border px-4 text-left text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 ${selected.includes(index) ? "answer-selected" : ""}`}><span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-black/10 text-[11px] font-bold">{String.fromCharCode(65 + index)}</span><span className="flex-1">{option}</span>{selected.includes(index) && <Check className="size-4" />}</button>)}</div><button type="button" onClick={() => sendAnswer(selected)} disabled={!selected.length || answerLocked || seconds === 0 || isSubmitting} className={`${primaryButtonClass} w-full px-6 py-3`}>{answerButtonLabel}<Check className="size-4" /></button></div>}
-          <div className="mt-2 w-full text-center"><p role="status" className="min-h-5 text-xs text-white/45">{message || (question.type === "MULTIPLE_CHOICE" ? "Select every answer you think is correct." : "Your answer locks when submitted or when time runs out.")}</p></div>
+          {question.type === "IDENTIFICATION" ? <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 sm:flex-row"><input aria-label="Type your answer" className={`${fieldClass} min-w-0 flex-1`} value={identification} onChange={(event) => setIdentification(event.target.value)} placeholder="Type your answer" disabled={answerLocked || seconds === 0 || isSubmitting} /><button type="button" onClick={() => sendAnswer(identification.trim())} disabled={!identification.trim() || answerLocked || seconds === 0 || isSubmitting} className={`${primaryButtonClass} w-full px-6 py-3 sm:min-w-48 sm:w-auto`}>{answerButtonLabel}<ArrowRight className="size-4" /></button></div> : <div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className={`grid w-full gap-4 ${question.type === "TRUE_FALSE" ? "grid-cols-2" : "grid-cols-1 md:grid-cols-2"}`}>{question.options.map((option, index) => ({ option, index })).filter(({ option }) => option.trim()).map(({ option, index }) => <button key={index} type="button" aria-pressed={selected.includes(index)} disabled={answerLocked || seconds === 0 || isSubmitting} onClick={() => { playSound("answerSelect"); setSelected((current) => question.type === "TRUE_FALSE" ? [index] : current.includes(index) ? current.filter((choice) => choice !== index) : [...current, index]) }} className={`answer-card ${answerTones[index % answerTones.length]} flex min-h-[62px] items-center gap-3 rounded-lg border px-4 text-left text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 ${selected.includes(index) ? "answer-selected" : ""}`}><span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-black/10 text-[11px] font-bold">{String.fromCharCode(65 + index)}</span><span className="flex-1">{option}</span>{selected.includes(index) && <Check className="size-4" />}</button>)}</div><button type="button" onClick={() => sendAnswer(selected)} disabled={!selected.length || answerLocked || seconds === 0 || isSubmitting} className={`${primaryButtonClass} w-full px-6 py-3`}>{answerButtonLabel}<Check className="size-4" /></button></div>}
+          <div className="mt-2 w-full text-center"><p role="status" className="min-h-5 text-xs text-white/45">{message || (question.type === "MULTIPLE_CHOICE" ? (room.partialCredit ? "Select every correct answer. Partial credit is on, but wrong picks cost you points." : "Select every answer you think is correct.") : "Your answer locks when submitted or when time runs out.")}</p></div>
           <div className="mt-5 flex items-center justify-between border-t border-white/[0.07] pt-4 text-xs text-white/40"><span>{currentPlayer?.nickname ?? "Player"}</span><span>Score revealed after the question</span></div>
         </div> : <div className={`${surfaceClass} p-8 text-center text-sm text-white/45`}>No active question is available.</div>}
         <div className="mt-5 flex justify-center"><Link href={`/room/${code}/join`} className="rounded-full border border-white/[0.08] px-4 py-2 text-xs text-white/45 transition hover:border-[#ffd169]/30 hover:text-[#ffdc8b]">Room waiting area <ArrowRight className="ml-2 inline size-3.5" /></Link></div>

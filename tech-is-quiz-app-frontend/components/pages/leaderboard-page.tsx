@@ -1,15 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Crown, Trophy } from "lucide-react"
 import { QuizShell, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
+import { useGameAudio } from "@/components/game-audio-provider"
 import type { RoomState, RoomPlayer } from "@/lib/game-types"
 
 export function LeaderboardPage({ code }: { code: string }) {
   const [room, setRoom] = useState<RoomState | null>(null)
   const [error, setError] = useState("")
+  const { playSound } = useGameAudio()
+  const fanfarePlayed = useRef(false)
 
   useEffect(() => {
     const socket = getRealtimeSocket()
@@ -26,6 +29,10 @@ export function LeaderboardPage({ code }: { code: string }) {
       socket.off("room:state", onState)
     }
   }, [code])
+
+  useEffect(() => {
+    if (room?.phase === "COMPLETED" && !fanfarePlayed.current) { fanfarePlayed.current = true; playSound("podiumFanfare") }
+  }, [room?.phase, playSound])
 
   const players = room?.players ?? []
   const podium = [players[1], players[0], players[2]].filter((player): player is RoomPlayer => Boolean(player))

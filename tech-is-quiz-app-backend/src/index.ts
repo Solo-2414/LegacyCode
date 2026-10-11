@@ -34,6 +34,7 @@ type Player = {
   answer?: string | number[]
   pointsAwarded?: number
   isCorrect?: boolean
+  isPartial?: boolean
 }
 type GamePhase = "LOBBY" | "QUESTION" | "REVEAL" | "LEADERBOARD" | "COMPLETED"
 type Room = {
@@ -137,6 +138,7 @@ function roomState(room: Room) {
   return {
     code: room.code,
     quizTitle: room.quiz.title,
+    partialCredit: room.quiz.partialCredit === true,
     playerLimit: room.playerLimit,
     autoStartWhenFull: room.autoStartWhenFull,
     phase: room.phase,
@@ -167,6 +169,7 @@ function roomState(room: Room) {
       ...(reveal && player.answer !== undefined ? {
         answer: player.answer,
         isCorrect: player.isCorrect,
+        isPartial: player.isPartial,
         pointsAwarded: player.pointsAwarded,
       } : {}),
     })).sort((first, second) => second.score - first.score || first.nickname.localeCompare(second.nickname)),
@@ -191,6 +194,7 @@ function setPhase(room: Room, phase: GamePhase) {
       delete player.answer
       delete player.pointsAwarded
       delete player.isCorrect
+      delete player.isPartial
     }
     room.startedAt = Date.now()
     room.endsAt = room.startedAt + question.timeLimitSec * 1000
@@ -501,6 +505,7 @@ io.on("connection", (rawSocket) => {
         answer: existing?.answer,
         pointsAwarded: existing?.pointsAwarded,
         isCorrect: existing?.isCorrect,
+        isPartial: existing?.isPartial,
       }
       room.players.set(playerId, player)
       if (persisted) await reconnectPersistedParticipant(persisted.participant_id)
@@ -556,7 +561,7 @@ io.on("connection", (rawSocket) => {
     }
     finishRoom(room)
   })
-  socket.on("room:submit", (payload: { code?: string; playerId?: string; participantId?: string; teamId?: string; answer?: unknown }, acknowledge?: (result: { ok: boolean; error?: string; isCorrect?: boolean; pointsAwarded?: number }) => void) => {
+  socket.on("room:submit", (payload: { code?: string; playerId?: string; participantId?: string; teamId?: string; answer?: unknown }, acknowledge?: (result: { ok: boolean; error?: string; isCorrect?: boolean; isPartial?: boolean; pointsAwarded?: number }) => void) => {
     const room = findRoom(payload?.code)
     const player = room?.players.get(socket.data.playerId ?? "")
     const question = room ? currentQuestion(room) : undefined
@@ -564,7 +569,7 @@ io.on("connection", (rawSocket) => {
     if (room.phase !== "QUESTION" || !question || !room.startedAt || !room.endsAt || Date.now() > room.endsAt) return acknowledge?.({ ok: false, error: "Answers are locked." })
     const duration = question.timeLimitSec * 1000
     const elapsed = Math.max(0, Date.now() - room.startedAt)
-    const result = applyAnswer(player, question, payload.answer, elapsed, duration)
+    const result = applyAnswer(player, question, payload.answer, elapsed, duration, { partialCredit: room.quiz.partialCredit === true })
     if (!result.ok) return acknowledge?.(result)
     acknowledge?.(result)
     void query("UPDATE participants SET score = $2, is_connected = TRUE WHERE id = $1", [player.participantId, player.score]).catch((error) => console.error("Could not persist participant score:", error))

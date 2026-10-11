@@ -30,6 +30,7 @@ export type SavedQuiz = {
   id: string
   title: string
   description: string
+  partialCredit?: boolean
   rounds: QuizRound[]
   updatedAt: string
 }
@@ -59,6 +60,7 @@ function createRound(number: number): QuizRound {
 export function QuizBuilder({ quiz, onCancel, onSave }: { quiz?: SavedQuiz; onCancel: () => void; onSave: (quiz: SavedQuiz) => void | Promise<void> }) {
   const [title, setTitle] = useState(quiz?.title ?? "")
   const [description, setDescription] = useState(quiz?.description ?? "")
+  const [partialCredit, setPartialCredit] = useState(quiz?.partialCredit ?? false)
   const [rounds, setRounds] = useState(quiz?.rounds ?? [createRound(1)])
   const [activeRoundId, setActiveRoundId] = useState(rounds[0].id)
   const [error, setError] = useState("")
@@ -102,6 +104,7 @@ export function QuizBuilder({ quiz, onCancel, onSave }: { quiz?: SavedQuiz; onCa
       id: quiz?.id ?? createId(),
       title: title.trim(),
       description: description.trim(),
+      partialCredit,
       rounds,
       updatedAt: new Date().toISOString(),
     })
@@ -118,11 +121,18 @@ export function QuizBuilder({ quiz, onCancel, onSave }: { quiz?: SavedQuiz; onCa
       </div>
 
       <section className={`${surfaceClass} grid grid-cols-1 gap-6 p-5 md:grid-cols-2 sm:p-6`}>
-        <label className="flex flex-col gap-2 text-xs font-semibold text-white/65">Quiz title
+        <label className="flex flex-col gap-2 text-xs font-semibold text-white/65"><span className="flex h-4 items-baseline gap-2">Quiz title</span>
           <input className={builderFieldClass} maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Product thinking" required />
         </label>
-        <label className="flex flex-col gap-2 text-xs font-semibold text-white/65">Description <span className="text-[10px] font-normal text-white/35">Optional</span>
+        <label className="flex flex-col gap-2 text-xs font-semibold text-white/65"><span className="flex h-4 items-baseline gap-2">Description <span className="text-[10px] font-normal text-white/35">Optional</span></span>
           <input className={builderFieldClass} maxLength={240} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What will players explore?" />
+        </label>
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/[0.08] bg-black/15 p-4 md:col-span-2">
+          <input type="checkbox" className="mt-px size-4 shrink-0 accent-[#10d7ac]" checked={partialCredit} onChange={(event) => setPartialCredit(event.target.checked)} />
+          <span className="flex flex-col gap-1">
+            <span className="text-xs font-semibold text-white/80">Partial credit for multiple-answer questions</span>
+            <span className="text-[11px] leading-5 font-normal text-white/45">{partialCredit ? "On: each correct pick earns a share of the points and each wrong pick takes one away (never below 0). Example with 2 correct answers: both = full points, one correct = half, one correct + one wrong = 0." : "Off: players must select exactly the correct answers to earn any points."}</span>
+          </span>
         </label>
       </section>
 

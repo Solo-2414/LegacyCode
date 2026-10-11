@@ -9,6 +9,7 @@ export type RoomPlayer = {
   hasAnswered: boolean
   answer?: string | number[]
   isCorrect?: boolean
+  isPartial?: boolean
   pointsAwarded?: number
 }
 
@@ -27,6 +28,7 @@ export type LiveQuestion = {
 export type RoomState = {
   code: string
   quizTitle: string
+  partialCredit: boolean
   playerLimit: number | null
   autoStartWhenFull: boolean
   phase: GamePhase

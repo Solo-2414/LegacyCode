@@ -13,12 +13,13 @@ type QuizQuestion = {
   timeLimitSec: number
 }
 type QuizRound = { id: string; title: string; questions: QuizQuestion[] }
-export type Quiz = { id: string; title: string; description: string; rounds: QuizRound[]; updatedAt: string }
+export type Quiz = { id: string; title: string; description: string; partialCredit: boolean; rounds: QuizRound[]; updatedAt: string }
 
 type QuizRow = {
   quiz_id: string
   quiz_title: string
   quiz_description: string | null
+  quiz_partial_credit: boolean | null
   quiz_updated_at: Date
   round_id: string
   round_number: number
@@ -59,6 +60,7 @@ function isUuid(value: unknown): value is string {
 function normalizeQuiz(input: Quiz): Quiz {
   return {
     ...input,
+    partialCredit: input.partialCredit === true,
     id: isUuid(input.id) ? input.id : randomUUID(),
     updatedAt: new Date().toISOString(),
     rounds: input.rounds.map((round) => ({
@@ -74,7 +76,7 @@ function normalizeQuiz(input: Quiz): Quiz {
 
 export async function loadQuizzes(): Promise<Quiz[]> {
   const result = await query<QuizRow>(`
-    SELECT q.id AS quiz_id, q.title AS quiz_title, q.description AS quiz_description, q.updated_at AS quiz_updated_at,
+    SELECT q.id AS quiz_id, q.title AS quiz_title, q.description AS quiz_description, q.partial_credit AS quiz_partial_credit, q.updated_at AS quiz_updated_at,
            r.id AS round_id, r.round_number, r.title AS round_title,
            question.id AS question_id, question.type AS question_type, question.question_text, question.explanation,
            question.options, question.correct_answer, question.accepted_answers,
@@ -89,7 +91,7 @@ export async function loadQuizzes(): Promise<Quiz[]> {
   for (const row of result.rows) {
     let quiz = quizzes.get(row.quiz_id)
     if (!quiz) {
-      quiz = { id: row.quiz_id, title: row.quiz_title, description: row.quiz_description ?? "", rounds: [], updatedAt: row.quiz_updated_at.toISOString() }
+      quiz = { id: row.quiz_id, title: row.quiz_title, description: row.quiz_description ?? "", partialCredit: row.quiz_partial_credit === true, rounds: [], updatedAt: row.quiz_updated_at.toISOString() }
       quizzes.set(row.quiz_id, quiz)
     }
     if (!row.round_id) continue
@@ -122,8 +124,8 @@ export async function saveQuiz(input: Quiz, hostId: string): Promise<Quiz> {
   if (host.rowCount !== 1) throw new Error("The quiz host account could not be found.")
   const quiz = normalizeQuiz(input)
   await withTransaction(async (client) => {
-    const updated = await client.query("UPDATE quizzes SET title = $2, description = $3, updated_at = $4 WHERE id = $1", [quiz.id, quiz.title.trim(), quiz.description ?? "", quiz.updatedAt])
-    if (!updated.rowCount) await client.query("INSERT INTO quizzes (id, host_id, title, description, updated_at) VALUES ($1, $2, $3, $4, $5)", [quiz.id, hostId, quiz.title.trim(), quiz.description ?? "", quiz.updatedAt])
+    const updated = await client.query("UPDATE quizzes SET title = $2, description = $3, partial_credit = $5, updated_at = $4 WHERE id = $1", [quiz.id, quiz.title.trim(), quiz.description ?? "", quiz.updatedAt, quiz.partialCredit])
+    if (!updated.rowCount) await client.query("INSERT INTO quizzes (id, host_id, title, description, partial_credit, updated_at) VALUES ($1, $2, $3, $4, $5, $6)", [quiz.id, hostId, quiz.title.trim(), quiz.description ?? "", quiz.partialCredit, quiz.updatedAt])
     await client.query("DELETE FROM rounds WHERE quiz_id = $1", [quiz.id])
     for (const [roundIndex, round] of quiz.rounds.entries()) {
       const roundId = round.id || randomUUID()

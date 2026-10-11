@@ -5,7 +5,7 @@ import Link from "next/link"
 import { ArrowRight, Check, Clock3, Copy, Crown, Radio, UsersRound, X } from "lucide-react"
 import { PageHeading, QuizShell, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
-import { AudioToggle, useGameAudio } from "@/components/game-audio-provider"
+import { useGameAudio } from "@/components/game-audio-provider"
 import type { RoomState } from "@/lib/game-types"
 
 export function HostRoomPage({ code }: { code: string }) {
@@ -15,6 +15,7 @@ export function HostRoomPage({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
   const previousPlayerCount = useRef(0)
   const previousSeconds = useRef<number | null>(null)
+  const previousPhase = useRef<RoomState["phase"] | null>(null)
   const { startLobbyMusic, stopLobbyMusic, playSound } = useGameAudio()
 
   useEffect(() => {
@@ -55,15 +56,33 @@ export function HostRoomPage({ code }: { code: string }) {
     return () => stopLobbyMusic()
   }, [room?.phase, startLobbyMusic, stopLobbyMusic])
 
+  // Player join: chime for the host
   useEffect(() => {
     if (!room) return
-    if (room.players.length > previousPlayerCount.current && previousPlayerCount.current > 0) playSound("chime")
+    if (room.players.length > previousPlayerCount.current && previousPlayerCount.current > 0) playSound("playerJoin")
     previousPlayerCount.current = room.players.length
   }, [playSound, room])
 
+  // Phase changes: game start, answer reveal, final fanfare
   useEffect(() => {
-    if (room?.phase === "QUESTION" && seconds <= 5 && seconds > 0 && previousSeconds.current !== seconds) playSound("tick")
-    previousSeconds.current = room?.phase === "QUESTION" ? seconds : null
+    const phase = room?.phase
+    const previous = previousPhase.current
+    previousPhase.current = phase ?? null
+    if (!phase || previous === null || previous === phase) return
+    if (previous === "LOBBY" && phase === "QUESTION") playSound("gameStart")
+    if (phase === "REVEAL") playSound("reveal")
+    if (phase === "COMPLETED") playSound("podiumFanfare")
+  }, [playSound, room?.phase])
+
+  // Countdown: soft tick, faster tick for the last 5 seconds, bell at zero
+  useEffect(() => {
+    if (room?.phase !== "QUESTION") { previousSeconds.current = null; return }
+    const last = previousSeconds.current
+    previousSeconds.current = seconds
+    if (last === null || last === seconds) return
+    if (seconds === 0) playSound("timeUp")
+    else if (seconds <= 5) playSound("timerUrgent")
+    else playSound("timerTick")
   }, [playSound, room?.phase, seconds])
 
   function control(event: "room:start" | "room:reveal" | "room:leaderboard" | "room:next") {
@@ -110,7 +129,7 @@ export function HostRoomPage({ code }: { code: string }) {
           </div> : room.phase === "REVEAL" ? <div className={`${surfaceClass} p-5 sm:p-7`}>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#62e8cb]">Answer reveal</p><h2 className="mt-2 text-2xl font-bold text-white">{room.question?.questionText}</h2>
             {room.question?.type === "IDENTIFICATION" ? <p className="mt-5 rounded-xl border border-[#10d7ac]/25 bg-[#10d7ac]/[0.08] p-4 text-sm font-semibold text-[#72edce]">Accepted: {room.question.acceptedAnswers?.join(", ")}</p> : <div className="mt-5 grid gap-2 sm:grid-cols-2">{room.question?.options.map((option, index) => ({ option, index })).filter(({ option }) => option.trim()).map(({ option, index }) => <div key={index} className={`flex min-h-12 items-center gap-3 rounded-xl border px-4 text-sm ${room.question?.correctOptions?.includes(index) ? "border-[#10d7ac]/40 bg-[#10d7ac]/[0.09] text-[#72edce]" : "border-white/[0.07] bg-white/[0.025] text-white/50"}`}>{room.question?.correctOptions?.includes(index) ? <Check className="size-4" /> : <X className="size-4" />}{option}</div>)}</div>}
-            <div className="mt-5 grid grid-cols-2 gap-3"><HostStat label="Correct" value={String(room.players.filter((player) => player.isCorrect).length)} icon={<Check className="size-4" />} /><HostStat label="Incorrect / no answer" value={String(room.players.length - room.players.filter((player) => player.isCorrect).length)} icon={<X className="size-4" />} /></div>
+            <div className={`mt-5 grid gap-3 ${room.partialCredit ? "grid-cols-3" : "grid-cols-2"}`}>{(() => { const correctCount = room.players.filter((player) => player.isCorrect).length; const partialCount = room.players.filter((player) => player.isPartial).length; return <><HostStat label="Correct" value={String(correctCount)} icon={<Check className="size-4" />} />{room.partialCredit && <HostStat label="Partial credit" value={String(partialCount)} icon={<Check className="size-4" />} />}<HostStat label="Incorrect / no answer" value={String(room.players.length - correctCount - partialCount)} icon={<X className="size-4" />} /></> })()}</div>
             <button type="button" onClick={() => control("room:leaderboard")} className={`${primaryButtonClass} mt-6 w-full`}>Show leaderboard <ArrowRight className="size-4" /></button>
           </div> : room.phase === "LEADERBOARD" || room.phase === "COMPLETED" ? <div className={`${surfaceClass} p-5 sm:p-7`}>
             <div className="mb-5 flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-xl border border-[#ffd169]/20 bg-[#ffd169]/[0.08] text-[#ffd169]"><Crown className="size-5" /></span><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#ffd169]">{room.phase === "COMPLETED" ? "Quiz complete" : "Standings"}</p><h2 className="mt-1 text-xl font-bold text-white">Leaderboard</h2></div></div>

@@ -16,6 +16,7 @@ const scriptDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const migrationFiles = [
   resolve(scriptDirectory, "sql/001_create_postgres_schema.sql"),
   resolve(scriptDirectory, "sql/002_add_indexes_and_constraints.sql"),
+  resolve(scriptDirectory, "sql/003_add_partial_credit.sql"),
 ]
 
 try {
