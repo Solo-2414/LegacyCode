@@ -273,6 +273,90 @@
   to { transform: scaleX(0); }
 }
 
+/* ---------- Motion ---------- */
+@keyframes quiz-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes quiz-pop {
+  0% { opacity: 0; transform: scale(0.88); }
+  60% { opacity: 1; transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes quiz-shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-7px); }
+  36% { transform: translateX(6px); }
+  54% { transform: translateX(-4px); }
+  72% { transform: translateX(3px); }
+}
+
+@keyframes quiz-rise {
+  from { opacity: 0; transform: translateY(70px) scaleY(0.6); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+@keyframes quiz-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(26px, -34px, 0) scale(1.08); }
+}
+
+@keyframes quiz-urgent {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+}
+
+@keyframes quiz-glow {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.22; }
+}
+
+@keyframes quiz-confetti {
+  0% { transform: translate3d(0, -12vh, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate3d(var(--confetti-drift, 0px), 112vh, 0) rotate(var(--confetti-spin, 540deg)); opacity: 0.9; }
+}
+
+@keyframes quiz-correct-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 215, 172, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 215, 172, 0.18); }
+}
+
+.anim-fade-up { animation: quiz-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-pop { animation: quiz-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.anim-shake { animation: quiz-shake 0.5s ease-in-out both; }
+.anim-rise { animation: quiz-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: bottom center; }
+.anim-urgent { display: inline-block; animation: quiz-urgent 0.8s ease-in-out infinite; }
+.anim-correct { animation: quiz-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both, quiz-correct-pulse 1.6s ease-in-out 0.6s 2; }
+
+.stagger-children > * { animation: quiz-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 45ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 90ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 135ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 180ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 225ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 270ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 315ms; }
+.stagger-children > *:nth-child(n+9) { animation-delay: 360ms; }
+
+.quiz-orb-one { animation: quiz-float 16s ease-in-out infinite; }
+.quiz-orb-two { animation: quiz-float 21s ease-in-out infinite reverse; }
+.leader-glow { animation: quiz-glow 4s ease-in-out infinite; }
+
+.answer-card { transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+.answer-card:hover:not(:disabled) { transform: translateY(-3px); }
+.answer-card:active:not(:disabled) { transform: scale(0.97); }
+.answer-selected { animation: quiz-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  border-radius: 2px;
+  animation: quiz-confetti var(--confetti-duration, 4s) cubic-bezier(0.3, 0.1, 0.5, 1) var(--confetti-delay, 0s) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

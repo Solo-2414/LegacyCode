@@ -10,21 +10,23 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
  */
 const SOUNDS = {
   playerJoin: { src: "/sounds/player-join.mp3", volume: 0.55 },
-  gameStart: { src: "/sounds/game-start.mp3", volume: 0.7 },
-  timerTick: { src: "/sounds/timer-tick.mp3", volume: 0.3 },
+  gameStart: { src: "/sounds/game-start.mp3", volume: 0.55 },
+  timerTick: { src: "/sounds/timer-tick.mp3", volume: 0.22 },
   timerUrgent: { src: "/sounds/timer-urgent.mp3", volume: 0.5 },
-  timeUp: { src: "/sounds/time-up.mp3", volume: 0.65 },
+  timeUp: { src: "/sounds/time-up.mp3", volume: 0.5 },
   answerSelect: { src: "/sounds/answer-select.mp3", volume: 0.5 },
   reveal: { src: "/sounds/reveal.mp3", volume: 0.55 },
-  correct: { src: "/sounds/correct.mp3", volume: 0.65 },
+  correct: { src: "/sounds/correct.mp3", volume: 0.5 },
   wrong: { src: "/sounds/wrong.mp3", volume: 0.5 },
   pointsTally: { src: "/sounds/points-tally.mp3", volume: 0.45 },
-  podiumFanfare: { src: "/sounds/podium-fanfare.mp3", volume: 0.75 },
+  podiumFanfare: { src: "/sounds/podium-fanfare.mp3", volume: 0.6 },
 } as const
 
 export type GameSound = keyof typeof SOUNDS
 
-const LOBBY_BGM = { src: "/sounds/lobby-bgm.mp3", volume: 0.35 }
+// Background music is kept deliberately quiet and fades in so nobody is startled.
+const LOBBY_BGM = { src: "/sounds/lobby-bgm.mp3", volume: 0.18 }
+const BGM_FADE_IN_MS = 2500
 const STORAGE_KEY = "techis-audio-enabled"
 
 type GameAudioContextValue = {
@@ -40,8 +42,10 @@ const GameAudioContext = createContext<GameAudioContextValue | null>(null)
 
 export function GameAudioProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
-  const [isAudioEnabled, setAudioEnabled] = useState(false)
-  const enabledRef = useRef(false)
+  // Sound is on by default; a person who mutes it keeps it muted (remembered in this browser).
+  const [isAudioEnabled, setAudioEnabled] = useState(true)
+  const enabledRef = useRef(true)
+  const fadeInRef = useRef<number | null>(null)
   const sfxCache = useRef(new Map<GameSound, HTMLAudioElement>())
   const bgmRef = useRef<HTMLAudioElement | null>(null)
   const bgmWanted = useRef(false)
@@ -49,9 +53,10 @@ export function GameAudioProvider({ children }: { children: ReactNode }) {
   // Restore the saved mute preference. Browsers still need one tap before the first sound can play.
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY) === "1"
-      enabledRef.current = saved
-      setAudioEnabled(saved)
+      const saved = window.localStorage.getItem(STORAGE_KEY)
+      const enabled = saved !== "0"
+      enabledRef.current = enabled
+      setAudioEnabled(enabled)
     } catch { /* storage unavailable */ }
   }, [])
 
@@ -69,12 +74,23 @@ export function GameAudioProvider({ children }: { children: ReactNode }) {
   const tryPlayBgm = useCallback(() => {
     if (!enabledRef.current || !bgmWanted.current) return
     const bgm = getBgm()
-    bgm.volume = LOBBY_BGM.volume
-    void bgm.play().catch(() => { /* blocked until the user taps; retried on first interaction */ })
+    if (!bgm.paused) return
+    if (fadeInRef.current) window.clearInterval(fadeInRef.current)
+    bgm.volume = 0
+    void bgm.play().then(() => {
+      // ramp from silence to the target volume
+      const startedAt = performance.now()
+      fadeInRef.current = window.setInterval(() => {
+        const progress = Math.min(1, (performance.now() - startedAt) / BGM_FADE_IN_MS)
+        bgm.volume = LOBBY_BGM.volume * progress
+        if (progress >= 1 && fadeInRef.current) { window.clearInterval(fadeInRef.current); fadeInRef.current = null }
+      }, 50)
+    }).catch(() => { /* blocked until the user taps; retried on first interaction */ })
   }, [getBgm])
 
   const stopLobbyMusic = useCallback(() => {
     bgmWanted.current = false
+    if (fadeInRef.current) { window.clearInterval(fadeInRef.current); fadeInRef.current = null }
     const bgm = bgmRef.current
     if (!bgm || bgm.paused) return
     // short fade-out so the music doesn't cut off abruptly
@@ -85,7 +101,6 @@ export function GameAudioProvider({ children }: { children: ReactNode }) {
       if (volume <= 0) {
         window.clearInterval(fade)
         if (!bgmWanted.current) { bgm.pause(); bgm.currentTime = 0 }
-        bgm.volume = LOBBY_BGM.volume
       }
     }, 40)
   }, [])
@@ -126,7 +141,10 @@ export function GameAudioProvider({ children }: { children: ReactNode }) {
     setAudioEnabled(next)
     try { window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0") } catch { /* ignore */ }
     if (next) tryPlayBgm()
-    else bgmRef.current?.pause()
+    else {
+      if (fadeInRef.current) { window.clearInterval(fadeInRef.current); fadeInRef.current = null }
+      bgmRef.current?.pause()
+    }
   }, [tryPlayBgm])
 
   const enableAudio = useCallback(() => setEnabled(true), [setEnabled])

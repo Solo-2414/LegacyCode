@@ -6,6 +6,8 @@ import { ArrowRight, Check, Clock3, Copy, Crown, Radio, UserX, UsersRound, X } f
 import { PageHeading, QuizShell, primaryButtonClass, secondaryButtonClass, surfaceClass } from "@/components/quiz-shell"
 import { getRealtimeSocket } from "@/lib/realtime"
 import { useGameAudio } from "@/components/game-audio-provider"
+import { AnimatedNumber } from "@/components/animated-number"
+import { Confetti } from "@/components/confetti"
 import { StandingsToggle, TeamRows, type StandingsView } from "@/components/team-standings"
 import type { RoomPlayer, RoomState } from "@/lib/game-types"
 
@@ -113,6 +115,7 @@ export function HostRoomPage({ code }: { code: string }) {
 
   return (
     <QuizShell>
+      <Confetti active={room?.phase === "COMPLETED"} />
       <section className="mx-auto max-w-[1000px]" aria-labelledby="host-room-title">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div><p className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#62e8cb]">Room {code}</p><h1 id="host-room-title" className="mt-1 text-xl font-bold tracking-tight text-white">{room?.quizTitle ?? "Host room"}</h1></div>
@@ -131,7 +134,7 @@ export function HostRoomPage({ code }: { code: string }) {
             <PlayerRoster players={room.players} onKick={kickPlayer} />
             <button type="button" onClick={() => control("room:start")} className={`${primaryButtonClass} mt-6 w-full`}>Start game <ArrowRight className="size-4" /></button>
           </div> : room.phase === "QUESTION" ? <div className={`${surfaceClass} p-5 sm:p-7`}>
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold text-[#62e8cb]">{room.roundTitle} · Question {room.questionIndex + 1}</p><h2 className="mt-2 text-2xl font-bold text-white">{room.question?.questionText}</h2></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/40">Time left</p><p className={`mt-1 text-3xl font-bold tabular-nums ${seconds <= 5 ? "text-[#ffa0b1]" : "text-white"}`}>{seconds}s</p></div></div>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold text-[#62e8cb]">{room.roundTitle} · Question {room.questionIndex + 1}</p><h2 className="mt-2 text-2xl font-bold text-white">{room.question?.questionText}</h2></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/40">Time left</p><p className={`mt-1 text-3xl font-bold tabular-nums ${seconds <= 5 ? "anim-urgent text-[#ffa0b1]" : "text-white"}`}>{seconds}s</p></div></div>
             <div className="mb-5 h-2 overflow-hidden rounded-full bg-white/[0.07]"><div className="h-full bg-[#10d7ac] transition-[width] duration-200" style={{ width: `${room.question ? seconds / room.question.timeLimitSec * 100 : 0}%` }} /></div>
             <p className="text-xs text-white/45">{room.players.filter((player) => player.hasAnswered).length} of {room.players.length} answers submitted · {room.question?.points} points</p>
             <button type="button" onClick={() => control("room:reveal")} className={`${primaryButtonClass} mt-6 w-full`}>Lock answers and reveal <Check className="size-4" /></button>
@@ -163,7 +166,7 @@ function PlayerRoster({ players, onKick }: { players: RoomState["players"]; onKi
   return players.length === 0 ? <p className="py-5 text-center text-xs text-white/40">Waiting for players to join.</p> : <div className="grid gap-x-6 sm:grid-cols-2">
     {[...teams.entries()].sort(([first], [second]) => first.localeCompare(second)).map(([teamName, teammates]) => <section key={teamName} aria-label={`Team ${teamName}`} className="border-t border-white/[0.07] py-3">
       <div className="flex items-center justify-between gap-3"><h2 className="truncate text-xs font-semibold text-white/80">{teamName}</h2><span className="shrink-0 text-[10px] text-white/40">{teammates.length} {teammates.length === 1 ? "player" : "players"}</span></div>
-      <ul className="mt-2 divide-y divide-white/[0.06]">{teammates.map((player) => <li key={player.id} className="flex items-center gap-3 py-2"><span className={`size-2 shrink-0 rounded-full ${player.isConnected ? "bg-[#10d7ac]" : "bg-white/25"}`} /><span className="min-w-0 flex-1 truncate text-sm font-medium text-white/80">{player.nickname}</span><span className="shrink-0 text-[10px] text-white/40">{player.isConnected ? "Connected" : "Reconnecting"}</span><KickButton player={player} onKick={onKick} /></li>)}</ul>
+      <ul className="mt-2 divide-y divide-white/[0.06]">{teammates.map((player) => <li key={player.id} className="animate-in fade-in zoom-in-95 slide-in-from-left-2 duration-500 flex items-center gap-3 py-2"><span className={`size-2 shrink-0 rounded-full ${player.isConnected ? "bg-[#10d7ac]" : "bg-white/25"}`} /><span className="min-w-0 flex-1 truncate text-sm font-medium text-white/80">{player.nickname}</span><span className="shrink-0 text-[10px] text-white/40">{player.isConnected ? "Connected" : "Reconnecting"}</span><KickButton player={player} onKick={onKick} /></li>)}</ul>
     </section>)}
   </div>
 }
@@ -173,7 +176,7 @@ function KickButton({ player, onKick }: { player: RoomPlayer; onKick: (player: R
 }
 
 function LeaderboardRows({ players, onKick }: { players: RoomState["players"]; onKick?: (player: RoomPlayer) => void }) {
-  return <ol className="divide-y divide-white/[0.06]">{players.map((player, index) => <li key={player.id} className="flex items-center gap-3 py-3"><span className={`w-7 text-center text-sm font-bold ${index === 0 ? "text-[#ffd169]" : "text-white/40"}`}>{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm font-medium text-white/80">{player.nickname}</span><span className="text-sm font-bold tabular-nums text-white">{player.score.toLocaleString()} <span className="text-[10px] font-medium text-white/35">pts</span></span>{onKick && <KickButton player={player} onKick={onKick} />}</li>)}{players.length === 0 && <li className="py-6 text-center text-sm text-white/40">No players joined this room.</li>}</ol>
+  return <ol className="stagger-children divide-y divide-white/[0.06]">{players.map((player, index) => <li key={player.id} className="flex items-center gap-3 py-3"><span className={`w-7 text-center text-sm font-bold ${index === 0 ? "text-[#ffd169]" : "text-white/40"}`}>{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm font-medium text-white/80">{player.nickname}</span><span className="text-sm font-bold tabular-nums text-white"><AnimatedNumber value={player.score} /> <span className="text-[10px] font-medium text-white/35">pts</span></span>{onKick && <KickButton player={player} onKick={onKick} />}</li>)}{players.length === 0 && <li className="py-6 text-center text-sm text-white/40">No players joined this room.</li>}</ol>
 }
 
 function HostStat({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {

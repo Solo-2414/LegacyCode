@@ -11,7 +11,7 @@ export function QuizShell({ children }: { children: React.ReactNode }) {
       <div className="relative mx-auto max-w-[1320px]">
         <header className="mb-8 flex flex-col gap-4 border-b border-white/[0.07] pb-4 sm:mb-10 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
           <Link className="group flex w-fit items-center gap-3" href="/" aria-label="TechIs QuizApp home">
-            <span className="size-10 overflow-hidden rounded-[14px] ring-1 ring-white/15 shadow-[0_5px_24px_rgba(0,0,0,.3)] sm:size-11">
+            <span className="size-10 overflow-hidden rounded-[14px] transition duration-300 group-hover:-rotate-6 group-hover:scale-110 ring-1 ring-white/15 shadow-[0_5px_24px_rgba(0,0,0,.3)] sm:size-11">
               <BrandLogo />
             </span>
             <span className="flex flex-col leading-none">
@@ -37,7 +37,7 @@ export function Eyebrow({ children }: { children: React.ReactNode }) {
 
 export function PageHeading({ id, eyebrow, title, description }: { id?: string; eyebrow: string; title: React.ReactNode; description: string }) {
   return (
-    <div className="mb-8 max-w-2xl">
+    <div className="anim-fade-up mb-8 max-w-2xl">
       <Eyebrow>{eyebrow}</Eyebrow>
       <h1 id={id} className="text-[2rem] leading-[1.08] font-bold tracking-[-0.055em] text-white sm:text-[3.1rem]">{title}</h1>
       <p className="mt-3 max-w-xl text-sm leading-6 text-white/45 sm:text-[15px]">{description}</p>
@@ -45,7 +45,7 @@ export function PageHeading({ id, eyebrow, title, description }: { id?: string; 
   )
 }
 
-export const surfaceClass = "rounded-[26px] border border-white/[0.09] bg-[#141b25]/75 shadow-[0_24px_80px_rgba(0,0,0,.26)] backdrop-blur-xl"
+export const surfaceClass = "animate-in fade-in slide-in-from-bottom-3 duration-500 rounded-[26px] border border-white/[0.09] bg-[#141b25]/75 shadow-[0_24px_80px_rgba(0,0,0,.26)] backdrop-blur-xl"
 export const fieldClass = "h-[52px] w-full rounded-xl border border-white/[0.11] bg-white/[0.035] px-4 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#10d7ac]/55 focus:ring-2 focus:ring-[#10d7ac]/15"
-export const primaryButtonClass = "inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#10d7ac] px-5 py-3 text-sm font-bold text-[#08251f] shadow-[0_8px_30px_rgba(16,215,172,.19)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#37e5bd] hover:shadow-[0_12px_40px_rgba(16,215,172,.32)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45"
-export const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.045] px-4 text-sm font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+export const primaryButtonClass = "inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#10d7ac] px-5 py-3 text-sm font-bold text-[#08251f] shadow-[0_8px_30px_rgba(16,215,172,.19)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#37e5bd] hover:shadow-[0_12px_40px_rgba(16,215,172,.32)] active:translate-y-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45"
+export const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.045] px-4 text-sm font-semibold text-white/70 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.08] hover:text-white active:translate-y-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
